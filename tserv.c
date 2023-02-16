@@ -10,6 +10,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include "sockbuf.h"
+
 #define LISTEN_PORT "5000"
 
 // Print the last error message corresponding to errno.
@@ -36,7 +38,6 @@ void *addrinfo_sin_addr(struct addrinfo *addr) {
 int main(int argc, char *argv[]) {
     int z;
     int sock;
-    char buf[1024];
 
     // Get this server's address.
     struct addrinfo hints, *servaddr;
@@ -44,7 +45,7 @@ int main(int argc, char *argv[]) {
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
-    z = getaddrinfo(NULL, LISTEN_PORT, &hints, &servaddr);
+    z = getaddrinfo("localhost", LISTEN_PORT, &hints, &servaddr);
     if (z != 0) {
         exit_err("getaddrinfo()");
     }
@@ -75,6 +76,8 @@ int main(int argc, char *argv[]) {
     }
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
 
+    char buf[1000];
+
     while (1) {
         struct sockaddr_in a;
         socklen_t a_len = sizeof(a);
@@ -85,18 +88,18 @@ int main(int argc, char *argv[]) {
         }
 
         printf("--- New client ---\n");
-        char clientmsg[1024];
-        int seq = 0;
+        sockbuf_t *clientsb = sockbuf_new(client, 0);
 
         // Block and receive messages from client until client socket is closed.
-        while (recv(client, buf, sizeof buf, 0) != 0) {
+        int msglen;
+        while ((msglen = sockbuf_read(clientsb, buf, sizeof buf)) != 0) {
+            buf[msglen] = '\0';
             printf("recv(): %s\n", buf);
-
-            sprintf(clientmsg, "client msg %d", seq);
-            send(client, clientmsg, strlen(clientmsg), 0);
-            seq++;
+            sockbuf_debugprint(clientsb);
         }
         printf("recv(): EOF\n");
+        close(client);
+        break;
     }
 
     close(sock);

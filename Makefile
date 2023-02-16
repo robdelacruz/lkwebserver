@@ -1,11 +1,14 @@
 CFLAGS=
 LIBS=
 
-all: t
+all: tserv tclient
 
-t: t.c inputbuf.c
-	gcc -o t t.c inputbuf.c $(CFLAGS) $(LIBS)
+tserv: tserv.c sockbuf.c
+	gcc -o tserv tserv.c sockbuf.c $(CFLAGS) $(LIBS)
+
+tclient: tclient.c sockbuf.c
+	gcc -o tclient tclient.c sockbuf.c $(CFLAGS) $(LIBS)
 
 clean:
-	rm -rf t
+	rm -rf tserv tclient
 
