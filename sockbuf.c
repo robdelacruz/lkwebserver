@@ -33,35 +33,33 @@ void sockbuf_free(sockbuf_t *sockbuf) {
 }
 
 // Expand memory allocated to buf by size.
-void sockbuf_expand_buf(sockbuf_t *sockbuf, size_t size) {
-    assert(sockbuf->buf_size >= sockbuf->buf_len);
+void sockbuf_expand_buf(sockbuf_t *sb, size_t size) {
+    assert(sb->buf_size >= sb->buf_len);
 
-    sockbuf->buf_size += size;
-    sockbuf->buf = realloc(sockbuf->buf, sockbuf->buf_size);
+    sb->buf_size += size;
+    sb->buf = realloc(sb->buf, sb->buf_size);
 
     // Initialize unwritten buf space with '.' for debugging purposes.
-    memset(sockbuf->buf + sockbuf->buf_len, '.',
-           sockbuf->buf_size - sockbuf->buf_len);
+    memset(sb->buf + sb->buf_len, '.', sb->buf_size - sb->buf_len);
 }
 
-void sockbuf_append(sockbuf_t *sockbuf, char *bytes, size_t bytes_size) {
+void sockbuf_append(sockbuf_t *sb, char *bytes, size_t bytes_size) {
     if (bytes == NULL || bytes_size == 0) {
         return;
     }
-
-    assert(sockbuf->buf_size >= sockbuf->buf_len);
+    assert(sb->buf_size >= sb->buf_len);
 
     // Make sure there's enough space in buf to append bytes.
-    int num_available_bytes = sockbuf->buf_size - sockbuf->buf_len;
+    int num_available_bytes = sb->buf_size - sb->buf_len;
     if (bytes_size > num_available_bytes) {
         //$$ Consider exponentially growing buf rather than growing by bytes_size.
-        sockbuf_expand_buf(sockbuf, num_available_bytes - bytes_size);
+        sockbuf_expand_buf(sb, bytes_size - num_available_bytes);
     }
 
-    assert(sockbuf->buf_size - sockbuf->buf_len >= bytes_size);
+    assert(sb->buf_size - sb->buf_len >= bytes_size);
 
-    memcpy(sockbuf->buf + sockbuf->buf_len, bytes, bytes_size);
-    sockbuf->buf_len += bytes_size;
+    memcpy(sb->buf + sb->buf_len, bytes, bytes_size);
+    sb->buf_len += bytes_size;
 }
 
 // Read bytes from buffer, reading from socket as necessary to read additional bytes.
@@ -116,6 +114,55 @@ size_t sockbuf_read(sockbuf_t *sockbuf, char *dst, size_t count) {
     return count;
 }
 
+// Read one line from buffered socket, including the \n char, \0 terminated.
+// This will block when reading from socket.
+// Returns number of chars read or 0 for EOF.
+size_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
+    assert(sb->buf_size >= sb->buf_len);
+    assert(sb->buf_len >= sb->next_read_pos);
+    assert(dst_len > 2); // Reserve space for \n and \0.
+
+    if (sb->sockclosed) {
+        return 0;
+    }
+
+    int idst = 0;
+    char buf[10];
+    while (1) {
+        // If no buffer chars available, read from socket.
+        if (sb->next_read_pos == sb->buf_len) {
+            int recvlen = recv(sb->sock, buf, sizeof(buf), 0);
+            if (recvlen == 0) {
+                sb->sockclosed = 1;
+                dst[idst] = '\0';
+                return idst;
+            }
+            sockbuf_append(sb, buf, recvlen);
+        }
+
+        // Copy unread buffer bytes into dst until a '\n' char.
+        while (idst < dst_len-1) {
+            if (sb->next_read_pos >= sb->buf_len) {
+                break;
+            }
+            dst[idst] = sb->buf[sb->next_read_pos];
+            sb->next_read_pos++;
+
+            if (dst[idst] == '\n') {
+                break;
+            }
+            idst++;
+        }
+        if (dst[idst] == '\n' || idst == dst_len-2) {
+            break;
+        }
+    }
+
+    assert(dst[idst] == '\n' || idst == dst_len-2);
+    dst[idst+1] = '\0';
+    return idst+1;
+}
+
 void printbuf(char *buf, size_t buf_size) {
     printf("buf: ");
     for (int i=0; i < buf_size; i++) {
@@ -125,10 +172,11 @@ void printbuf(char *buf, size_t buf_size) {
     printf("buf_size: %ld\n", buf_size);
 }
 
-void sockbuf_debugprint(sockbuf_t *sockbuf) {
-    printbuf(sockbuf->buf, sockbuf->buf_size);
-    printf("buf_len: %ld\n", sockbuf->buf_len);
-    printf("next_read_pos: %d\n", sockbuf->next_read_pos);
+void sockbuf_debugprint(sockbuf_t *sb) {
+    printf("buf_size: %ld\n", sb->buf_size);
+    printf("buf_len: %ld\n", sb->buf_len);
+    printf("next_read_pos: %d\n", sb->next_read_pos);
+    printbuf(sb->buf, sb->buf_size);
     printf("\n");
 }
 

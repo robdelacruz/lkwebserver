@@ -61,8 +61,10 @@ int main(int argc, char *argv[]) {
 
     sockbuf_t *servsb = sockbuf_new(sock, 0);
 
-    char *msg = "Now is the time for all good men to come to the aid of the party.\n";
-    char *msg2 = "The quick brown fox jumps over the lazy dog.\n";
+    char *msg = 
+        "Now is the time for all good men to come to the aid of the party.\n"
+        "The quick brown fox jumps over the lazy dog.\n";
+    char *msg2 = "abc\ndef\nghi\njklmnop\nqrstuv\nwxyz";
     send(sock, msg, strlen(msg), 0);
     send(sock, msg2, strlen(msg2), 0);
 

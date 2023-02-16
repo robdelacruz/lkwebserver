@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
     }
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
 
-    char buf[1000];
+    char line[1000];
 
     while (1) {
         struct sockaddr_in a;
@@ -88,16 +88,20 @@ int main(int argc, char *argv[]) {
         }
 
         printf("--- New client ---\n");
-        sockbuf_t *clientsb = sockbuf_new(client, 0);
+        sockbuf_t *sb = sockbuf_new(client, 0);
 
         // Block and receive messages from client until client socket is closed.
-        int msglen;
-        while ((msglen = sockbuf_read(clientsb, buf, sizeof buf)) != 0) {
-            buf[msglen] = '\0';
-            printf("recv(): %s\n", buf);
-            sockbuf_debugprint(clientsb);
+        while (1) {
+            memset(line, '-', sizeof line);
+            int nchars = sockbuf_readline(sb, line, sizeof line);
+            if (nchars == 0) {
+                break;
+            }
+            printf("recv(): %s\n", line);
         }
         printf("recv(): EOF\n");
+
+        sockbuf_free(sb);
         close(client);
         break;
     }
