@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
 
     char line[1000];
-    char buf[50];
+    char buf[10];
 
     while (1) {
         struct sockaddr_in a;
@@ -89,19 +89,23 @@ int main(int argc, char *argv[]) {
         }
 
         printf("--- New client ---\n");
-        sockbuf_t *sb = sockbuf_new(client, 5);
+        sockbuf_t *sb = sockbuf_new(client, 4);
 
         while (1) {
             memset(line, '-', sizeof line);
             memset(buf, '-', sizeof buf);
+#if 0
             int nchars = sockbuf_readline(sb, line, sizeof line);
             if (nchars == 0) break;
             printf("readline(): %s\n", line);
+#endif
 
-//            int nchars = sockbuf_read(sb, buf, sizeof(buf)-1);
-//            if (nchars == 0) break;
-//            buf[nchars] = '\0';
-//            printf("read(): %s\n", buf);
+//#if 0
+            int nchars = sockbuf_read(sb, buf, sizeof(buf)-1);
+            if (nchars == 0) break;
+            buf[nchars] = '\0';
+            printf("read(): %s\n", buf);
+//#endif
         }
         printf("EOF\n");
 
