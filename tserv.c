@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -13,6 +14,8 @@
 #include "sockbuf.h"
 
 #define LISTEN_PORT "5000"
+
+void new_client(int clientfd, int clienttype);
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {
@@ -35,9 +38,17 @@ void *addrinfo_sin_addr(struct addrinfo *addr) {
     }
 }
 
+void handle_sigint(int sig) {
+    printf("SIGINT received\n");
+    fflush(stdout);
+    exit(0);
+}
+
 int main(int argc, char *argv[]) {
     int z;
     int sock;
+
+    signal(SIGINT, handle_sigint);
 
     // Get this server's address.
     struct addrinfo hints, *servaddr;
@@ -76,9 +87,7 @@ int main(int argc, char *argv[]) {
     }
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
 
-    char line[1000];
-    char buf[10];
-
+    int clienttype = 0;
     while (1) {
         struct sockaddr_in a;
         socklen_t a_len = sizeof(a);
@@ -88,34 +97,57 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        printf("--- New client ---\n");
-        sockbuf_t *sb = sockbuf_new(client, 4);
+        clienttype++;
+        clienttype = clienttype % 2;
 
-        while (1) {
-            memset(line, '-', sizeof line);
-            memset(buf, '-', sizeof buf);
-#if 0
+        pid_t pid = fork();
+        if (pid == -1) {
+            print_err("fork()");
+            continue;
+        }
+        if (pid > 0) {
+            // continue parent process
+            printf("child pid: %d\n", pid);
+            close(client);
+            continue;
+        } else {
+            // forked child process: handle new client
+            printf("New clientfd: %d\n", client);
+            new_client(client, clienttype);
+            exit(0);
+        }
+    }
+
+    // Code doesn't reach here.
+    close(sock);
+    return 0;
+}
+
+void new_client(int clientfd, int clienttype) {
+    char line[1000];
+    char buf[50];
+    sockbuf_t *sb = sockbuf_new(clientfd, 4);
+
+    while (1) {
+        memset(line, '-', sizeof line);
+        memset(buf, '-', sizeof buf);
+
+        if (clienttype == 0) {
             int nchars = sockbuf_readline(sb, line, sizeof line);
             if (nchars == 0) break;
             printf("readline(): %s\n", line);
-#endif
-
-//#if 0
+        } else {
             int nchars = sockbuf_read(sb, buf, sizeof(buf)-1);
             if (nchars == 0) break;
             buf[nchars] = '\0';
             printf("read(): %s\n", buf);
-//#endif
         }
-        printf("EOF\n");
-
-        sockbuf_free(sb);
-        close(client);
-        break;
     }
 
-    close(sock);
-    return 0;
+    printf("EOF\n");
+    sockbuf_free(sb);
+    close(clientfd);
 }
+
 
 

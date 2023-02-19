@@ -18,6 +18,7 @@ sockbuf_t *sockbuf_new(int sock, size_t buf_size) {
     sb->buf = malloc(buf_size);
     sb->buf_len = 0;
     sb->next_read_pos = 0;
+    sb->sockclosed = 0;
     memset(sb->buf, '*', sb->buf_size); // initialize for debugging purposes.
 
     return sb;
@@ -151,6 +152,7 @@ void sockbuf_debugprint(sockbuf_t *sb) {
     printf("buf_size: %ld\n", sb->buf_size);
     printf("buf_len: %ld\n", sb->buf_len);
     printf("next_read_pos: %d\n", sb->next_read_pos);
+    printf("sockclosed: %d\n", sb->sockclosed);
     printbuf(sb->buf, sb->buf_size);
     printf("\n");
 }
