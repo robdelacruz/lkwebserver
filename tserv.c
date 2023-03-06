@@ -4,18 +4,21 @@
 #include <unistd.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/wait.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <fcntl.h>
 
 #include "sockbuf.h"
 
 #define LISTEN_PORT "5000"
 
-void new_client(int clientfd, int clienttype);
+void handle_client(int clientfd, int clienttype);
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {
@@ -44,11 +47,18 @@ void handle_sigint(int sig) {
     exit(0);
 }
 
+void handle_sigchld(int sig) {
+    int tmp_errno = errno;
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+    }
+    errno = tmp_errno;
+}
+
 int main(int argc, char *argv[]) {
     int z;
-    int sock;
 
     signal(SIGINT, handle_sigint);
+    signal(SIGCHLD, handle_sigchld);
 
     // Get this server's address.
     struct addrinfo hints, *servaddr;
@@ -68,12 +78,12 @@ int main(int argc, char *argv[]) {
         exit_err("inet_ntop()");
     }
 
-    sock = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
-    if (sock == -1) {
+    int s0 = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
+    if (s0 == -1) {
         exit_err("socket()");
     }
 
-    z = bind(sock, servaddr->ai_addr, servaddr->ai_addrlen);
+    z = bind(s0, servaddr->ai_addr, servaddr->ai_addrlen);
     if (z != 0) {
         exit_err("bind()");
     }
@@ -81,51 +91,73 @@ int main(int argc, char *argv[]) {
     freeaddrinfo(servaddr);
     servaddr = NULL;
 
-    z = listen(sock, 5);
+    z = listen(s0, 5);
     if (z != 0) {
         exit_err("listen()");
     }
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
 
-    int clienttype = 0;
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(s0, &readfds);
+    int maxfd = s0;
+
     while (1) {
-        struct sockaddr_in a;
-        socklen_t a_len = sizeof(a);
-        int client = accept(sock, (struct sockaddr*)&a, &a_len);
-        if (client == -1) {
-            print_err("accept()");
+        // readfds contain the master list of read sockets
+        fd_set fds = readfds;
+        z = select(maxfd+1, &fds, NULL, NULL, NULL);
+        if (z == -1) {
+            exit_err("select()");
+        }
+        if (z == 0) {
+            // timeout returned
             continue;
         }
 
-        clienttype++;
-        clienttype = clienttype % 2;
+        // fds now contain list of clients with data available to be read.
+        for (int i=0; i <= maxfd; i++) {
+            if (!FD_ISSET(i, &fds)) {
+                continue;
+            }
 
-        pid_t pid = fork();
-        if (pid == -1) {
-            print_err("fork()");
-            continue;
-        }
-        if (pid > 0) {
-            // continue parent process
-            printf("child pid: %d\n", pid);
-            close(client);
-            continue;
-        } else {
-            // forked child process: handle new client
-            printf("New clientfd: %d\n", client);
-            new_client(client, clienttype);
-            exit(0);
+            // New client connection
+            if (i == s0) {
+                struct sockaddr_in a;
+                socklen_t a_len = sizeof(a);
+                int newclient = accept(s0, (struct sockaddr*)&a, &a_len);
+                if (newclient == -1) {
+                    print_err("accept()");
+                    continue;
+                }
+
+                // Add new client socket to list of read sockets.
+                FD_SET(newclient, &readfds);
+                if (newclient > maxfd) {
+                    maxfd = newclient;
+                }
+                printf("New client fd: %d\n", newclient);
+                continue;
+            }
+
+            // i contains client socket with data available to be read.
+            int clientfd = i;
+            handle_client(clientfd, 0);
+
+            FD_CLR(clientfd, &readfds);
+            close(clientfd);
         }
     }
 
     // Code doesn't reach here.
-    close(sock);
+    close(s0);
     return 0;
 }
 
-void new_client(int clientfd, int clienttype) {
+void handle_client(int clientfd, int clienttype) {
     char line[1000];
     char buf[50];
+
+//    fcntl(clientfd, F_SETFL, O_NONBLOCK);
     sockbuf_t *sb = sockbuf_new(clientfd, 4);
 
     while (1) {
@@ -146,7 +178,6 @@ void new_client(int clientfd, int clienttype) {
 
     printf("EOF\n");
     sockbuf_free(sb);
-    close(clientfd);
 }
 
 

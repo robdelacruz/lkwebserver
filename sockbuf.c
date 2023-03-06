@@ -110,6 +110,13 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
         if (sb->next_read_pos >= sb->buf_len) {
             memset(sb->buf, '*', sb->buf_size); // initialize for debugging purposes.
             int recvlen = recv(sb->sock, sb->buf, sb->buf_size, 0);
+            if (recvlen == -1) {
+                //if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                //}
+                
+                //$$ handle nonblocking socket correctly
+                break;
+            }
             if (recvlen == 0) {
                 sb->sockclosed = 1;
                 break;
