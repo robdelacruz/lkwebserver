@@ -57,8 +57,10 @@ int httpreq_parse_initial_request_line(httpreq_t *req, char *line) {
     char *uri = toks[1];
     char *version = toks[2];
 
-    if (!strcmp(method, "GET") && !strcmp(method, "POST") && !strcmp(method, "PUT") 
-        && !strcmp(method, "DELETE")) {
+    if (strcmp(method, "GET") != 0 &&
+        strcmp(method, "POST") != 0 && 
+        strcmp(method, "PUT") != 0 && 
+        strcmp(method, "DELETE") != 0) {
         free(linetmp);
         return -1;
     }
