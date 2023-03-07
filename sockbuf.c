@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <fcntl.h>
 #include "sockbuf.h"
 
 sockbuf_t *sockbuf_new(int sock, size_t buf_size) {
@@ -24,71 +25,49 @@ sockbuf_t *sockbuf_new(int sock, size_t buf_size) {
     return sb;
 }
 
-void sockbuf_free(sockbuf_t *sockbuf) {
-    free(sockbuf->buf);
-    sockbuf->buf = NULL;
+void sockbuf_free(sockbuf_t *sb) {
+    free(sb->buf);
+    sb->buf = NULL;
 
-    free(sockbuf);
+    free(sb);
 }
 
-// Read bytes from buffer, reading from socket as necessary to read additional bytes.
-// This will block when reading from socket.
-ssize_t sockbuf_read(sockbuf_t *sb, char *dst, size_t count) {
-    assert(count > 0);
-    assert(sb->buf_size >= sb->buf_len);
-    assert(sb->buf_len >= sb->next_read_pos);
+int sockbuf_eof(sockbuf_t *sb) {
+    return sb->sockclosed;
+}
 
-    if (sb->sockclosed) {
-        return 0;
-    }
-    if (count == 0) {
-        errno = EINVAL;
-        return -1;
-    }
+// Receive count bytes into buf.
+// Returns num bytes received or -1 for error.
+ssize_t recvn(int sock, char *buf, size_t count) {
+    memset(buf, '*', count); // initialize for debugging purposes.
 
-    int nbytes_read = 0;
-    while (count > 0) {
-        // If no buffer chars available, read from socket.
-        if (sb->next_read_pos >= sb->buf_len) {
-            memset(sb->buf, '*', sb->buf_size); // initialize for debugging purposes.
-            int recvlen = recv(sb->sock, sb->buf, sb->buf_size, 0);
-            if (recvlen == 0) {
-                sb->sockclosed = 1;
-                break;
-            }
-            sb->buf_len = recvlen;
-            sb->next_read_pos = 0;
+    int nread = 0;
+    while (nread < count) {
+        int z = recv(sock, buf+nread, count-nread, MSG_DONTWAIT);
+        // socket closed, no more data
+        if (z == 0) {
+            break;
         }
-
-        // Copy as much buffer chars as needed up to count.
-        int nbufbytes;
-        if (count > sb->buf_len - sb->next_read_pos) {
-            nbufbytes = sb->buf_len - sb->next_read_pos;
-        } else {
-            nbufbytes = count;
+        // interrupt occured during read, retry read.
+        if (z == -1 && errno == EINTR) {
+            continue;
         }
-        memcpy(dst + nbytes_read, sb->buf + sb->next_read_pos, nbufbytes);
-
-        nbytes_read += nbufbytes;
-        count -= nbufbytes;
-        sb->next_read_pos += nbufbytes;
-
-        assert(count >= 0);
-        assert(sb->buf_len >= sb->next_read_pos);
+        // no data available at the moment, just return what we have.
+        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break;
+        }
+        // any other error
+        if (z == -1) {
+            return z;
+        }
+        nread += z;
     }
 
-    assert(sb->buf_len >= sb->next_read_pos);
-
-//    printf("count: %ld\n", count);
-//    printf("next_read_pos: %d\n", sb->next_read_pos);
-//    printf("buf_len: %ld\n", sb->buf_len);
-
-    return nbytes_read;
+    return nread;
 }
 
 // Read one line from buffered socket, including the \n char, \0 terminated.
-// This will block when reading from socket.
-// Returns number of chars read or 0 for EOF.
+// Returns num bytes read or -1 for error.
 ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
     assert(dst_len > 2); // Reserve space for \n and \0.
     assert(sb->buf_size >= sb->buf_len);
@@ -102,48 +81,54 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
         return -1;
     }
 
-    int nbytes_read = 0;
-
-    // Leave space for string null terminator.
-    while (nbytes_read < dst_len-1) {
+    int nread = 0;
+    while (nread < dst_len-1) { // leave space for null terminator
         // If no buffer chars available, read from socket.
         if (sb->next_read_pos >= sb->buf_len) {
             memset(sb->buf, '*', sb->buf_size); // initialize for debugging purposes.
-            int recvlen = recv(sb->sock, sb->buf, sb->buf_size, 0);
-            if (recvlen == -1) {
-                //if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                //}
-                
-                //$$ handle nonblocking socket correctly
-                break;
-            }
-            if (recvlen == 0) {
+            int z = recv(sb->sock, sb->buf, sb->buf_size, MSG_DONTWAIT);
+            // socket closed, no more data
+            if (z == 0) {
                 sb->sockclosed = 1;
                 break;
             }
-            sb->buf_len = recvlen;
+            // interrupt occured during read, retry read.
+            if (z == -1 && errno == EINTR) {
+                continue;
+            }
+            // no data available at the moment, just return what we have.
+            if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                break;
+            }
+            // any other error
+            if (z == -1) {
+                assert(nread <= dst_len-1);
+                dst[nread] = '\0';
+                return z;
+            }
+            sb->buf_len = z;
             sb->next_read_pos = 0;
         }
 
         // Copy unread buffer bytes into dst until a '\n' char.
-        while (nbytes_read < dst_len-1) {
+        while (nread < dst_len-1) {
             if (sb->next_read_pos >= sb->buf_len) {
                 break;
             }
-            dst[nbytes_read] = sb->buf[sb->next_read_pos];
-            nbytes_read++;
+            dst[nread] = sb->buf[sb->next_read_pos];
+            nread++;
             sb->next_read_pos++;
 
-            if (dst[nbytes_read-1] == '\n') {
+            if (dst[nread-1] == '\n') {
                 goto readline_end;
             }
         }
     }
 
 readline_end:
-    assert(nbytes_read <= dst_len-1);
-    dst[nbytes_read] = '\0';
-    return nbytes_read;
+    assert(nread <= dst_len-1);
+    dst[nread] = '\0';
+    return nread;
 }
 
 void printbuf(char *buf, size_t buf_size) {
@@ -162,6 +147,17 @@ void sockbuf_debugprint(sockbuf_t *sb) {
     printf("sockclosed: %d\n", sb->sockclosed);
     printbuf(sb->buf, sb->buf_size);
     printf("\n");
+}
+
+void set_sock_timeout(int sock, int nsecs, int ms) {
+    struct timeval tv;
+    tv.tv_sec = nsecs;
+    tv.tv_usec = ms * 1000; // convert milliseconds to microseconds
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+}
+
+void set_sock_nonblocking(int sock) {
+    fcntl(sock, F_SETFL, O_NONBLOCK);
 }
 
 

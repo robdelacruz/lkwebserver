@@ -76,8 +76,11 @@ int main(int argc, char *argv[]) {
         "1";
 #endif
 
-    send(sock, msg, strlen(msg), 0);
-    sleep(1);
+    z = send(sock, msg, strlen(msg), 0);
+    if (z == -1) {
+        exit_err("send()");
+    }
+    sleep(3);
     char *lastline = "end transmission\n";
     send(sock, lastline, strlen(lastline), 0);
 

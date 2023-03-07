@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <assert.h>
 #include <signal.h>
 #include <sys/wait.h>
 
@@ -12,13 +13,19 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <fcntl.h>
 
 #include "sockbuf.h"
 
 #define LISTEN_PORT "5000"
 
-void handle_client(int clientfd, int clienttype);
+void handle_client(int clientfd);
+
+typedef struct clientstruct {
+    sockbuf_t *sb;
+    struct clientstruct *next;
+} client_t;
+
+client_t *clienthead = NULL;
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {
@@ -135,13 +142,30 @@ int main(int argc, char *argv[]) {
                 if (newclient > maxfd) {
                     maxfd = newclient;
                 }
+
                 printf("New client fd: %d\n", newclient);
+                client_t *client = malloc(sizeof(client_t));
+                client->sb = sockbuf_new(newclient, 0);
+                client->next = NULL;
+
+                if (clienthead == NULL) {
+                    // first client
+                    clienthead = client;
+                } else {
+                    // add client to end of clients list
+                    client_t* p = clienthead;
+                    while (p->next != NULL) {
+                        p = p->next;
+                    }
+                    p->next = client;
+                }
+
                 continue;
             }
 
             // i contains client socket with data available to be read.
             int clientfd = i;
-            handle_client(clientfd, 0);
+            handle_client(clientfd);
 
             FD_CLR(clientfd, &readfds);
             close(clientfd);
@@ -153,31 +177,29 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void handle_client(int clientfd, int clienttype) {
-    char line[1000];
-    char buf[50];
-
-//    fcntl(clientfd, F_SETFL, O_NONBLOCK);
-    sockbuf_t *sb = sockbuf_new(clientfd, 4);
-
-    while (1) {
-        memset(line, '-', sizeof line);
-        memset(buf, '-', sizeof buf);
-
-        if (clienttype == 0) {
-            int nchars = sockbuf_readline(sb, line, sizeof line);
-            if (nchars == 0) break;
-            printf("readline(): %s\n", line);
-        } else {
-            int nchars = sockbuf_read(sb, buf, sizeof(buf)-1);
-            if (nchars == 0) break;
-            buf[nchars] = '\0';
-            printf("read(): %s\n", buf);
-        }
+void handle_client(int clientfd) {
+    client_t* p = clienthead;
+    while (p != NULL && p->sb->sock != clientfd) {
+        p = p->next;
     }
+    if (p == NULL) {
+        printf("handle_client() clientfd %d not in clients list\n", clientfd);
+        return;
+    }
+    assert(p->sb->sock == clientfd);
 
-    printf("EOF\n");
-    sockbuf_free(sb);
+    char line[1000];
+    memset(line, '-', sizeof line);
+
+    int z = sockbuf_readline(p->sb, line, sizeof line);
+    if (z == 0) {
+        return;
+    }
+    if (z == -1) {
+        print_err("sockbuf_readline()");
+        return;
+    }
+    printf("readline(): %s\n", line);
 }
 
 

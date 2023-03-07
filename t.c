@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#define LISTEN_PORT "5000"
+#include "http.h"
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {
@@ -21,85 +21,19 @@ void exit_err(char *s) {
     exit(1);
 }
 
-// Return sin_addr or sin6_addr depending on address family.
-void *addrinfo_sin_addr(struct addrinfo *addr) {
-    // addr->ai_addr is either struct sockaddr_in* or sockaddr_in6* depending on ai_family
-    if (addr->ai_family == AF_INET) {
-        struct sockaddr_in *p = (struct sockaddr_in*) addr->ai_addr;
-        return &(p->sin_addr);
-    } else {
-        struct sockaddr_in6 *p = (struct sockaddr_in6*) addr->ai_addr;
-        return &(p->sin6_addr);
-    }
-}
-
 int main(int argc, char *argv[]) {
-    int z;
-    int sock;
-    char buf[1024];
+    httpreq_t *req = httpreq_new();
 
-    // Get this server's address.
-    struct addrinfo hints, *servaddr;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    z = getaddrinfo(NULL, LISTEN_PORT, &hints, &servaddr);
-    if (z != 0) {
-        exit_err("getaddrinfo()");
-    }
+    char *getline = "GET /path/to/index.html HTTP/1.0";
+    char *headerline1 = "User-Agent: rob";
+    char *headerline2 = "From: abc@email.com";
+    httpreq_parseline(req, getline);
+    httpreq_parseline(req, headerline1);
+    httpreq_parseline(req, headerline2);
 
-    // Get human readable IP address string in servipstr.
-    char servipstr[INET6_ADDRSTRLEN];
-    const char *pz = inet_ntop(servaddr->ai_family, addrinfo_sin_addr(servaddr), servipstr, sizeof(servipstr));
-    if (pz ==NULL) {
-        exit_err("inet_ntop()");
-    }
+    httpreq_debugprint(req);
 
-    sock = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
-    if (sock == -1) {
-        exit_err("socket()");
-    }
-
-    z = bind(sock, servaddr->ai_addr, servaddr->ai_addrlen);
-    if (z != 0) {
-        exit_err("bind()");
-    }
-
-    freeaddrinfo(servaddr);
-    servaddr = NULL;
-
-    z = listen(sock, 5);
-    if (z != 0) {
-        exit_err("listen()");
-    }
-    printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
-
-    while (1) {
-        struct sockaddr_in a;
-        socklen_t a_len = sizeof(a);
-        int client = accept(sock, (struct sockaddr*)&a, &a_len);
-        if (client == -1) {
-            print_err("accept()");
-            continue;
-        }
-
-        printf("--- New client ---\n");
-        char clientmsg[1024];
-        int seq = 0;
-
-        // Block and receive messages from client until client socket is closed.
-        while (recv(client, buf, sizeof buf, 0) != 0) {
-            printf("recv(): %s\n", buf);
-
-            sprintf(clientmsg, "client msg %d", seq);
-            send(client, clientmsg, strlen(clientmsg), 0);
-            seq++;
-        }
-        printf("recv(): EOF\n");
-    }
-
-    close(sock);
+    httpreq_free(req);
     return 0;
 }
 
