@@ -5,39 +5,56 @@
 #include <assert.h>
 #include "http.h"
 
+// Remove trailing CRLF or LF (\n) from string.
+void chomp(char* s) {
+    int slen = strlen(s);
+    for (int i=slen-1; i >= 0; i--) {
+        if (s[i] != '\n' && s[i] != '\r') {
+            break;
+        }
+        // Replace \n and \r with null chars. 
+        s[i] = '\0';
+    }
+}
+
 httpreq_t *httpreq_new() {
     httpreq_t *req = malloc(sizeof(httpreq_t));
     req->method = NULL;
     req->uri = NULL;
     req->version = NULL;
+    req->body = NULL;
+    req->body_len = 0;
 
     req->headers_size = 10; // start with room for n headers
     req->headers_len = 0;
     req->headers = malloc(req->headers_size * sizeof(keyval_t));
-
-    req->nparsedlines = 0; // keep track of whether first line parsed
 }
 
 void httpreq_free(httpreq_t *req) {
+    if (req->method) free(req->method);
     if (req->uri) free(req->uri);
     if (req->version) free(req->version);
+    if (req->body) free(req->body);
     free(req->headers);
 
+    req->method = NULL;
     req->uri = NULL;
     req->version = NULL;
+    req->body = NULL;
     req->headers = NULL;
     free(req);
 }
 
-// Parse initial line
+// Parse initial request line
 // Ex. GET /path/to/index.html HTTP/1.0
-int httpreq_parse_initial_request_line(httpreq_t *req, char *line) {
+int httpreq_parse_request_line(httpreq_t *req, char *line) {
     char *toks[3];
     int ntoksread = 0;
 
     char *saveptr;
     char *delim = " \t";
     char *linetmp = strdup(line);
+    chomp(linetmp);
     char *p = linetmp;
     while (ntoksread < 3) {
         toks[ntoksread] = strtok_r(p, delim, &saveptr);
@@ -69,7 +86,6 @@ int httpreq_parse_initial_request_line(httpreq_t *req, char *line) {
     req->uri = strdup(uri);
     req->version = strdup(version);
 
-    req->nparsedlines++;
     free(linetmp);
     return 0;
 }
@@ -94,6 +110,7 @@ int httpreq_parse_header_line(httpreq_t *req, char *line) {
     char *delim = ":";
 
     char *linetmp = strdup(line);
+    chomp(linetmp);
     char *k = strtok_r(linetmp, delim, &saveptr);
     if (k == NULL) {
         free(linetmp);
@@ -111,18 +128,30 @@ int httpreq_parse_header_line(httpreq_t *req, char *line) {
     }
     httpreq_add_header(req, k, v);
 
-    req->nparsedlines++;
     free(linetmp);
     return 0;
 }
 
-int httpreq_parseline(httpreq_t *req, char *line) {
-    if (req->nparsedlines == 0) {
-        return httpreq_parse_initial_request_line(req, line);
+int httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len) {
+    // First time setting the body.
+    if (req->body == NULL) {
+        req->body = malloc(bytes_len);
+        if (req->body == NULL) {
+            return -1;
+        }
+        memcpy(req->body, bytes, bytes_len);
+        req->body_len = bytes_len;
+        return 0;
     }
 
-    // Succeeding lines have the format: "Header1: some value"
-    return httpreq_parse_header_line(req, line);
+    // Append bytes to existing body.
+    req->body = realloc(req->body, req->body_len + bytes_len);
+    if (req->body == NULL) {
+        return -1;
+    }
+    memcpy(req->body + req->body_len, bytes, bytes_len);
+    req->body_len += bytes_len;
+    return 0;
 }
 
 void httpreq_debugprint(httpreq_t *req) {
@@ -135,13 +164,20 @@ void httpreq_debugprint(httpreq_t *req) {
     if (req->version) {
         printf("version: %s\n", req->version);
     }
-    printf("nparsedlines: %d\n", req->nparsedlines);
     printf("headers_size: %ld\n", req->headers_size);
     printf("headers_len: %ld\n", req->headers_len);
 
     printf("Headers:\n");
     for (int i=0; i < req->headers_len; i++) {
         printf("%s: %s\n", req->headers[i].k, req->headers[i].v);
+    }
+
+    if (req->body) {
+        printf("Body:\n");
+        for (int i=0; i < req->body_len; i++) {
+            putchar(req->body[i]);
+        }
+        printf("\n");
     }
 }
 
