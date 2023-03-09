@@ -14,7 +14,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#include "sockbuf.h"
+#include "netfuncs.h"
 
 #define LISTEN_PORT "5000"
 

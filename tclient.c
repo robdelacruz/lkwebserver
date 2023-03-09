@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#include "sockbuf.h"
+#include "netfuncs.h"
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {

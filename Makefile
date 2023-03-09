@@ -3,15 +3,15 @@ LIBS=
 
 all: tserv tclient t
 
-tserv: tserv.c sockbuf.c http.c
-	gcc -o tserv tserv.c sockbuf.c http.c $(CFLAGS) $(LIBS)
+tserv: tserv.c netfuncs.c
+	gcc -o tserv tserv.c netfuncs.c $(CFLAGS) $(LIBS)
 
-tclient: tclient.c sockbuf.c
-	gcc -o tclient tclient.c sockbuf.c $(CFLAGS) $(LIBS)
+tclient: tclient.c netfuncs.c
+	gcc -o tclient tclient.c netfuncs.c $(CFLAGS) $(LIBS)
 
-t: t.c sockbuf.c http.c
-	gcc -o t t.c sockbuf.c http.c $(CFLAGS) $(LIBS)
+t: t.c netfuncs.c
+	gcc -o t t.c netfuncs.c $(CFLAGS) $(LIBS)
 
 clean:
-	rm -rf tserv tclient
+	rm -rf t tserv tclient
 
