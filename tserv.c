@@ -20,12 +20,17 @@
 
 void handle_client(int clientfd);
 
-typedef struct clientstruct {
-    sockbuf_t *sb;
-    struct clientstruct *next;
-} client_t;
+typedef struct clientctx {
+    int sock;                   // client socket
+    sockbuf_t *sb;              // input buffer for reading lines
+    char *partial_line;         // partial line from previous read
+                                // (to combine with next line)
+    int nlinesread;             // number of lines read so far
+    int empty_line_parsed;      // flag indicating whether empty line received
+    struct clientctx *next;     // linked list to next client
+} clientctx_t;
 
-client_t *clienthead = NULL;
+clientctx_t *ctxhead = NULL;
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {
@@ -90,6 +95,12 @@ int main(int argc, char *argv[]) {
         exit_err("socket()");
     }
 
+    int yes=1;
+    z = setsockopt(s0, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    if (s0 == -1) {
+        exit_err("setsockopt(SO_REUSEADDR)");
+    }
+
     z = bind(s0, servaddr->ai_addr, servaddr->ai_addrlen);
     if (z != 0) {
         exit_err("bind()");
@@ -131,33 +142,37 @@ int main(int argc, char *argv[]) {
             if (i == s0) {
                 struct sockaddr_in a;
                 socklen_t a_len = sizeof(a);
-                int newclient = accept(s0, (struct sockaddr*)&a, &a_len);
-                if (newclient == -1) {
+                int newclientsock = accept(s0, (struct sockaddr*)&a, &a_len);
+                if (newclientsock == -1) {
                     print_err("accept()");
                     continue;
                 }
 
                 // Add new client socket to list of read sockets.
-                FD_SET(newclient, &readfds);
-                if (newclient > maxfd) {
-                    maxfd = newclient;
+                FD_SET(newclientsock, &readfds);
+                if (newclientsock > maxfd) {
+                    maxfd = newclientsock;
                 }
 
-                printf("New client fd: %d\n", newclient);
-                client_t *client = malloc(sizeof(client_t));
-                client->sb = sockbuf_new(newclient, 0);
-                client->next = NULL;
+                printf("New client fd: %d\n", newclientsock);
+                clientctx_t *ctx = malloc(sizeof(clientctx_t));
+                ctx->sock = newclientsock;
+                ctx->sb = sockbuf_new(newclientsock, 0);
+                ctx->partial_line = NULL;
+                ctx->nlinesread = 0;
+                ctx->empty_line_parsed = 0;
+                ctx->next = NULL;
 
-                if (clienthead == NULL) {
+                if (ctxhead == NULL) {
                     // first client
-                    clienthead = client;
+                    ctxhead = ctx;
                 } else {
                     // add client to end of clients list
-                    client_t* p = clienthead;
+                    clientctx_t* p = ctxhead;
                     while (p->next != NULL) {
                         p = p->next;
                     }
-                    p->next = client;
+                    p->next = ctx;
                 }
 
                 continue;
@@ -167,8 +182,8 @@ int main(int argc, char *argv[]) {
             int clientfd = i;
             handle_client(clientfd);
 
-            FD_CLR(clientfd, &readfds);
-            close(clientfd);
+            //FD_CLR(clientfd, &readfds);
+            //close(clientfd);
         }
     }
 
@@ -178,7 +193,7 @@ int main(int argc, char *argv[]) {
 }
 
 void handle_client(int clientfd) {
-    client_t* p = clienthead;
+    clientctx_t* p = ctxhead;
     while (p != NULL && p->sb->sock != clientfd) {
         p = p->next;
     }
