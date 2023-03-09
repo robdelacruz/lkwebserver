@@ -61,12 +61,17 @@ int main(int argc, char *argv[]) {
 
     sockbuf_t *servsb = sockbuf_new(sock, 0);
 
-    char *msg = 
-        "GET /www/index.html HTTP/1.0\r\n"
-        "From: rob@robdelacruz.xyz\r\n"
-        "User-Agent: tclient/1.0\r\n"
-        "\r\n"
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin tortor mauris, commodo quis nibh sit amet, pellentesque gravida libero. Etiam pellentesque orci vitae quam sagittis, sed facilisis quam hendrerit. Interdum et malesuada fames ac ante ipsum primis in faucibus. Etiam a dapibus mauris, ut laoreet ante. Pellentesque sit amet dui eros. Integer cursus porttitor odio non venenatis. In hac habitasse platea dictumst. Phasellus leo nibh, elementum eu ipsum eget, euismod feugiat eros. Quisque sollicitudin et tellus vel pellentesque. Integer quam felis, finibus vel dui vitae, posuere dignissim urna. Nunc a vestibulum ex. Morbi in sollicitudin ligula, quis sodales magna. Suspendisse finibus non ligula vel blandit. Morbi ornare arcu vel accumsan venenatis. Curabitur erat orci, facilisis ut auctor aliquam, placerat vel lorem.\n";
+    char *chunks[] = {
+        "GET /www/index.html HTTP/1.0\r\n", 
+        "From: rob@rob", 
+        "delacruz.xyz\r\n", 
+        "User-Agent: tclient/1.0\r\n", 
+        "\r\n",
+        "message body: chunk 1 ",
+        "message body: chunk 2 ",
+        "message body: chunk 3\n"
+    };
+
 #if 0
     char *msg =
         "1\n"
@@ -76,13 +81,13 @@ int main(int argc, char *argv[]) {
         "1";
 #endif
 
-    z = send(sock, msg, strlen(msg), 0);
-    if (z == -1) {
-        exit_err("send()");
+    for (int i=0; i < sizeof(chunks) / sizeof(char *); i++) {
+        z = send(sock, chunks[i], strlen(chunks[i]), 0);
+        if (z == -1) {
+            exit_err("send()");
+        }
+        sleep(1);
     }
-    sleep(3);
-    char *lastline = "end transmission\n";
-    send(sock, lastline, strlen(lastline), 0);
 
     close(sock);
     return 0;

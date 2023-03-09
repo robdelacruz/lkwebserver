@@ -41,6 +41,33 @@ void exit_err(char *s) {
     exit(1);
 }
 
+// Return whether string ends with \n char.
+int ends_with_newline(char *s) {
+    int slen = strlen(s);
+    if (slen == 0) {
+        return 0;
+    }
+    if (s[slen-1] == '\n') {
+        return 1;
+    }
+    return 0;
+}
+
+// Append s to dst, returning new ptr to dst.
+char *append_string(char *dst, char *s) {
+    int slen = strlen(s);
+    if (slen == 0) {
+        return dst;
+    }
+
+    int dstlen = strlen(dst);
+    dst = realloc(dst, dstlen + slen + 1);
+    strncpy(dst + dstlen, s, slen+1);
+    assert(dst[dstlen+slen] == '\0');
+
+    return dst;
+}
+
 // Return sin_addr or sin6_addr depending on address family.
 void *addrinfo_sin_addr(struct addrinfo *addr) {
     // addr->ai_addr is either struct sockaddr_in* or sockaddr_in6* depending on ai_family
@@ -192,21 +219,24 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+void process_line(clientctx_t *ctx, char *line) {
+    printf("readline(): %s\n", line);
+}
+
 void handle_client(int clientfd) {
-    clientctx_t* p = ctxhead;
-    while (p != NULL && p->sb->sock != clientfd) {
-        p = p->next;
+    clientctx_t *ctx = ctxhead;
+    while (ctx != NULL && ctx->sock != clientfd) {
+        ctx = ctx->next;
     }
-    if (p == NULL) {
+    if (ctx == NULL) {
         printf("handle_client() clientfd %d not in clients list\n", clientfd);
         return;
     }
-    assert(p->sb->sock == clientfd);
+    assert(ctx->sock == clientfd);
+    assert(ctx->sb->sock == clientfd);
 
-    char line[1000];
-    memset(line, '-', sizeof line);
-
-    int z = sockbuf_readline(p->sb, line, sizeof line);
+    char buf[1000];
+    int z = sockbuf_readline(ctx->sb, buf, sizeof buf);
     if (z == 0) {
         return;
     }
@@ -214,7 +244,31 @@ void handle_client(int clientfd) {
         print_err("sockbuf_readline()");
         return;
     }
-    printf("readline(): %s\n", line);
+    assert(buf[z] == '\0');
+
+    // If there's a previous partial line, combine it with current line.
+    if (ctx->partial_line != NULL) {
+        ctx->partial_line = append_string(ctx->partial_line, buf);
+        if (ends_with_newline(ctx->partial_line)) {
+            process_line(ctx, ctx->partial_line);
+
+            free(ctx->partial_line);
+            ctx->partial_line = NULL;
+        }
+        return;
+    }
+
+    // If current line is only partial line (not newline terminated), remember it for
+    // next read.
+    if (!ends_with_newline(buf)) {
+        ctx->partial_line = strdup(buf);
+        return;
+    }
+
+    // Current line is complete.
+    process_line(ctx, buf);
+    return;
+
 }
 
 
