@@ -8,6 +8,61 @@
 #include <fcntl.h>
 #include "netfuncs.h"
 
+// Remove trailing CRLF or LF (\n) from string.
+void chomp(char* s) {
+    int slen = strlen(s);
+    for (int i=slen-1; i >= 0; i--) {
+        if (s[i] != '\n' && s[i] != '\r') {
+            break;
+        }
+        // Replace \n and \r with null chars. 
+        s[i] = '\0';
+    }
+}
+
+void set_sock_timeout(int sock, int nsecs, int ms) {
+    struct timeval tv;
+    tv.tv_sec = nsecs;
+    tv.tv_usec = ms * 1000; // convert milliseconds to microseconds
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+}
+
+void set_sock_nonblocking(int sock) {
+    fcntl(sock, F_SETFL, O_NONBLOCK);
+}
+
+// Receive count bytes into buf.
+// Returns num bytes received or -1 for error.
+ssize_t sock_recvn(int sock, char *buf, size_t count) {
+    memset(buf, '*', count); // initialize for debugging purposes.
+
+    int nread = 0;
+    while (nread < count) {
+        int z = recv(sock, buf+nread, count-nread, MSG_DONTWAIT);
+        // socket closed, no more data
+        if (z == 0) {
+            break;
+        }
+        // interrupt occured during read, retry read.
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        // no data available at the moment, just return what we have.
+        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break;
+        }
+        // any other error
+        if (z == -1) {
+            return z;
+        }
+        nread += z;
+    }
+
+    return nread;
+}
+
+/** sockbuf functions **/
+
 sockbuf_t *sockbuf_new(int sock, size_t buf_size) {
     sockbuf_t *sb = malloc(sizeof(sockbuf_t));
 
@@ -34,36 +89,6 @@ void sockbuf_free(sockbuf_t *sb) {
 
 int sockbuf_eof(sockbuf_t *sb) {
     return sb->sockclosed;
-}
-
-// Receive count bytes into buf.
-// Returns num bytes received or -1 for error.
-ssize_t recvn(int sock, char *buf, size_t count) {
-    memset(buf, '*', count); // initialize for debugging purposes.
-
-    int nread = 0;
-    while (nread < count) {
-        int z = recv(sock, buf+nread, count-nread, MSG_DONTWAIT);
-        // socket closed, no more data
-        if (z == 0) {
-            break;
-        }
-        // interrupt occured during read, retry read.
-        if (z == -1 && errno == EINTR) {
-            continue;
-        }
-        // no data available at the moment, just return what we have.
-        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            break;
-        }
-        // any other error
-        if (z == -1) {
-            return z;
-        }
-        nread += z;
-    }
-
-    return nread;
 }
 
 // Read one line from buffered socket, including the \n char, \0 terminated.
@@ -131,7 +156,7 @@ readline_end:
     return nread;
 }
 
-void printbuf(char *buf, size_t buf_size) {
+void debugprint_buf(char *buf, size_t buf_size) {
     printf("buf: ");
     for (int i=0; i < buf_size; i++) {
         putchar(buf[i]);
@@ -145,33 +170,11 @@ void sockbuf_debugprint(sockbuf_t *sb) {
     printf("buf_len: %ld\n", sb->buf_len);
     printf("next_read_pos: %d\n", sb->next_read_pos);
     printf("sockclosed: %d\n", sb->sockclosed);
-    printbuf(sb->buf, sb->buf_size);
+    debugprint_buf(sb->buf, sb->buf_size);
     printf("\n");
 }
 
-void set_sock_timeout(int sock, int nsecs, int ms) {
-    struct timeval tv;
-    tv.tv_sec = nsecs;
-    tv.tv_usec = ms * 1000; // convert milliseconds to microseconds
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
-}
-
-void set_sock_nonblocking(int sock) {
-    fcntl(sock, F_SETFL, O_NONBLOCK);
-}
-
-
-// Remove trailing CRLF or LF (\n) from string.
-void chomp(char* s) {
-    int slen = strlen(s);
-    for (int i=slen-1; i >= 0; i--) {
-        if (s[i] != '\n' && s[i] != '\r') {
-            break;
-        }
-        // Replace \n and \r with null chars. 
-        s[i] = '\0';
-    }
-}
+/** httpreq functions **/
 
 httpreq_t *httpreq_new() {
     httpreq_t *req = malloc(sizeof(httpreq_t));

@@ -40,6 +40,11 @@ ssize_t sock_recvn(int sock, char *buf, size_t count);
 void set_sock_timeout(int sock, int nsecs, int ms);
 void set_sock_nonblocking(int sock);
 
+/** Other helper functions **/
+
+// Remove trailing CRLF or LF (\n) from string.
+void chomp(char* s);
+
 
 /** sockbuf functions **/
 sockbuf_t *sockbuf_new(int sock, size_t initial_size);
