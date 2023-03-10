@@ -23,6 +23,7 @@ void handle_client(int clientfd);
 typedef struct clientctx {
     int sock;                   // client socket
     sockbuf_t *sb;              // input buffer for reading lines
+    httpreq_t *req;             // http request being parsed
     char *partial_line;         // partial line from previous read
                                 // (to combine with next line)
     int nlinesread;             // number of lines read so far
@@ -39,6 +40,18 @@ void print_err(char *s) {
 void exit_err(char *s) {
     print_err(s);
     exit(1);
+}
+
+// Return whether line is empty, ignoring whitespace chars ' ', \r, \n
+int is_empty_line(char *s) {
+    int slen = strlen(s);
+    for (int i=0; i < slen; i++) {
+        // Not an empty line if non-whitespace char is present.
+        if (s[i] != ' ' && s[i] != '\n' && s[i] != '\r') {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 // Return whether string ends with \n char.
@@ -185,6 +198,7 @@ int main(int argc, char *argv[]) {
                 clientctx_t *ctx = malloc(sizeof(clientctx_t));
                 ctx->sock = newclientsock;
                 ctx->sb = sockbuf_new(newclientsock, 0);
+                ctx->req = httpreq_new();
                 ctx->partial_line = NULL;
                 ctx->nlinesread = 0;
                 ctx->empty_line_parsed = 0;
@@ -220,7 +234,34 @@ int main(int argc, char *argv[]) {
 }
 
 void process_line(clientctx_t *ctx, char *line) {
-    printf("readline(): %s\n", line);
+    if (ctx->nlinesread == 0) {
+        int z = httpreq_parse_request_line(ctx->req, line);
+        if (z == -1) {
+            printf("Invalid request line: '%s'\n", line);
+        }
+
+        ctx->nlinesread++;
+        return;
+    }
+
+    if (is_empty_line(line)) {
+        ctx->empty_line_parsed = 1;
+        ctx->nlinesread++;
+
+        printf("--- HTTP REQUEST received ---\n");
+        httpreq_debugprint(ctx->req);
+        printf("-----------------------------\n");
+        return;
+    }
+
+    if (!ctx->empty_line_parsed) {
+        httpreq_parse_header_line(ctx->req, line);
+        ctx->nlinesread++;
+        return;
+    }
+
+    httpreq_append_body(ctx->req, line, strlen(line));
+    ctx->nlinesread++;
 }
 
 void handle_client(int clientfd) {
