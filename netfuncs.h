@@ -35,6 +35,24 @@ typedef struct {
     size_t headers_len;
 } httpreq_t;
 
+// httpresp_t - HTTP Response struct
+typedef struct {
+    int status;         // 404
+    char *statustext;   // File not found
+    char *version;      // HTTP/1.0
+    char *body;
+    size_t body_len;
+
+    // List of header key-value fields, terminated by NULL.
+    // Ex.
+    // [0] -> {"User-Agent", "browser"}
+    // [1] -> {"From", "abc@email.com"}
+    // NULL
+    keyval_t *headers;
+    size_t headers_size;
+    size_t headers_len;
+} httpresp_t;
+
 /** Helper socket functions **/
 ssize_t sock_recvn(int sock, char *buf, size_t count);
 void set_sock_timeout(int sock, int nsecs, int ms);
@@ -73,5 +91,9 @@ int httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len);
 // Print contents of req.
 void httpreq_debugprint(httpreq_t *req);
 
+
+/** httpresp functions **/
+httpresp_t *httpresp_new();
+void httpresp_free(httpresp_t *resp);
 #endif
 

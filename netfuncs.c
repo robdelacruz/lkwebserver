@@ -176,6 +176,20 @@ void sockbuf_debugprint(sockbuf_t *sb) {
 
 /** httpreq functions **/
 
+keyval_t *create_headers(size_t num_headers) {
+    keyval_t *headers = malloc(num_headers * sizeof(keyval_t));
+    memset(headers, 0, num_headers * sizeof(keyval_t));
+    return headers;
+}
+
+void free_headers(keyval_t *headers, size_t num_headers) {
+    for (int i=0; i < num_headers; i++) {
+        free(headers[i].k);
+        free(headers[i].v);
+    }
+    free(headers);
+}
+
 httpreq_t *httpreq_new() {
     httpreq_t *req = malloc(sizeof(httpreq_t));
     req->method = NULL;
@@ -186,7 +200,7 @@ httpreq_t *httpreq_new() {
 
     req->headers_size = 10; // start with room for n headers
     req->headers_len = 0;
-    req->headers = malloc(req->headers_size * sizeof(keyval_t));
+    req->headers = create_headers(req->headers_size);
 }
 
 void httpreq_free(httpreq_t *req) {
@@ -194,7 +208,7 @@ void httpreq_free(httpreq_t *req) {
     if (req->uri) free(req->uri);
     if (req->version) free(req->version);
     if (req->body) free(req->body);
-    free(req->headers);
+    free_headers(req->headers, req->headers_len);
 
     req->method = NULL;
     req->uri = NULL;
@@ -338,5 +352,33 @@ void httpreq_debugprint(httpreq_t *req) {
         }
         printf("\n");
     }
+}
+
+/** httpresp functions **/
+
+httpresp_t *httpresp_new() {
+    httpresp_t *resp = malloc(sizeof(httpresp_t));
+    resp->status = 0;
+    resp->statustext = NULL;
+    resp->version = NULL;
+    resp->body = NULL;
+    resp->body_len = 0;
+
+    resp->headers_size = 10; // start with room for n headers
+    resp->headers_len = 0;
+    resp->headers = create_headers(resp->headers_size);
+}
+
+void httpresp_free(httpresp_t *resp) {
+    if (resp->statustext) free(resp->statustext);
+    if (resp->version) free(resp->version);
+    if (resp->body) free(resp->body);
+    free_headers(resp->headers, resp->headers_len);
+
+    resp->statustext = NULL;
+    resp->version = NULL;
+    resp->body = NULL;
+    resp->headers = NULL;
+    free(resp);
 }
 

@@ -1,0 +1,59 @@
+python simplehttpserver returns the following:
+127.0.0.1 - - [11/Mar/2023 14:05:46] "GET /index3.html HTTP/1.1" 200 - 
+
+127.0.0.1 - - [11/Mar/2023 14:05:46] code 501, message Unsupported method ('POST')
+127.0.0.1 - - [11/Mar/2023 14:05:46] "POST /index3.html HTTP/1.1" 501 - 
+
+127.0.0.1 - - [11/Mar/2023 14:05:46] "HEAD /index3.html HTTP/1.1" 200 - 
+
+
+curl --head output:
+// html file
+HTTP/1.0 200 OK
+Server: SimpleHTTP/0.6 Python/3.10.6
+Date: Sat, 11 Mar 2023 06:12:05 GMT
+Content-Type: text/html
+Content-Length: 1219
+Last-Modified: Wed, 04 Jan 2023 07:35:30 GMT
+
+// image file
+HTTP/1.0 200 OK
+Server: SimpleHTTP/0.6 Python/3.10.6
+Date: Sat, 11 Mar 2023 06:12:05 GMT
+Content-Type: image/jpeg
+Content-Length: 95714
+Last-Modified: Sat, 11 Mar 2003 06:16:50 GMT
+
+// file not found
+HTTP/1.0 404 File not found
+Server: SimpleHTTP/0.6 Python/3.10.6
+Date: Sat, 11 Mar 2023 06:12:05 GMT
+Connection: close
+Content-Type: text/html;charset=utf-8
+Content-Length: 469
+
+handle POST?
+405 Method Not Allowed
+501 Not Implemented
+with basic html containing error message:
+<title>Error response</title>
+<h1>Error response</h1>
+<p>Error code: 501</p>
+<p>Message: Unsupported method ('POST').</p>
+
+nginx:
+Server: nginx/1.18.0
+
+Content-Type possibilities:
+https://stackoverflow.com/questions/23714383/what-are-all-the-possible-values-for-http-content-type-header
+
+text/css csv html javascript(obsolete) plain xml
+image/gif jpeg png tiff svg+xml
+application/javascript json xml zip pdf
+audio/mpeg
+video/mpeg mp4 quicktime webm
+
+
+
+
+
