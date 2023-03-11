@@ -17,22 +17,28 @@ typedef struct {
     char *v;
 } keyval_t;
 
+// stringmap_t - Dynamic array of key-value fields
+typedef struct {
+    keyval_t *items;
+    size_t items_len;
+    size_t items_size;
+} stringmap_t;
+
+// buf_t - Dynamic bytes buffer
+typedef struct {
+    char *bytes;
+    size_t bytes_len;
+    size_t bytes_size;
+} buf_t;
+
 // httpreq_t - HTTP Request struct
 typedef struct {
     char *method;       // GET
     char *uri;          // /path/to/index.html
     char *version;      // HTTP/1.0
-    char *body;
-    size_t body_len;
+    stringmap_t *headers;
+    buf_t *body;
 
-    // List of header key-value fields, terminated by NULL.
-    // Ex.
-    // [0] -> {"User-Agent", "browser"}
-    // [1] -> {"From", "abc@email.com"}
-    // NULL
-    keyval_t *headers;
-    size_t headers_size;
-    size_t headers_len;
 } httpreq_t;
 
 // httpresp_t - HTTP Response struct
@@ -40,18 +46,17 @@ typedef struct {
     int status;         // 404
     char *statustext;   // File not found
     char *version;      // HTTP/1.0
-    char *body;
-    size_t body_len;
-
-    // List of header key-value fields, terminated by NULL.
-    // Ex.
-    // [0] -> {"User-Agent", "browser"}
-    // [1] -> {"From", "abc@email.com"}
-    // NULL
-    keyval_t *headers;
-    size_t headers_size;
-    size_t headers_len;
+    stringmap_t *headers;
+    buf_t *body;
 } httpresp_t;
+
+stringmap_t *stringmap_new();
+void stringmap_free(stringmap_t *sm);
+void stringmap_set(stringmap_t *sm, char *k, char *v);
+
+buf_t *buf_new(size_t bytes_size);
+void buf_free(buf_t *buf);
+int buf_append(buf_t *buf, char *bytes, size_t len);
 
 /** Helper socket functions **/
 ssize_t sock_recvn(int sock, char *buf, size_t count);

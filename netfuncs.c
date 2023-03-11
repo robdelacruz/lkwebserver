@@ -174,47 +174,100 @@ void sockbuf_debugprint(sockbuf_t *sb) {
     printf("\n");
 }
 
-/** httpreq functions **/
+stringmap_t *stringmap_new() {
+    stringmap_t *sm = malloc(sizeof(stringmap_t));
+    sm->items_size = 10; // start with room for n headers
+    sm->items_len = 0;
 
-keyval_t *create_headers(size_t num_headers) {
-    keyval_t *headers = malloc(num_headers * sizeof(keyval_t));
-    memset(headers, 0, num_headers * sizeof(keyval_t));
-    return headers;
+    sm->items = malloc(sm->items_size * sizeof(stringmap_t));
+    memset(sm->items, 0, sm->items_size * sizeof(stringmap_t));
+    return sm;
 }
 
-void free_headers(keyval_t *headers, size_t num_headers) {
-    for (int i=0; i < num_headers; i++) {
-        free(headers[i].k);
-        free(headers[i].v);
+void stringmap_free(stringmap_t *sm) {
+    assert(sm->items != NULL);
+
+    for (int i=0; i < sm->items_len; i++) {
+        free(sm->items[i].k);
+        free(sm->items[i].v);
     }
-    free(headers);
+    free(sm->items);
+    sm->items = NULL;
+    free(sm);
 }
+
+void stringmap_set(stringmap_t *sm, char *k, char *v) {
+    assert(sm->items_size >= sm->items_len);
+
+    // If reached capacity, expand the array.
+    if (sm->items_len == sm->items_size) {
+        sm->items_size += 10;
+        sm->items = realloc(sm->items, sm->items_size * sizeof(keyval_t));
+        memset(sm->items + sm->items_len, 0, sm->items_size - sm->items_len);
+    }
+
+    sm->items[sm->items_len].k = strdup(k);
+    sm->items[sm->items_len].v = strdup(v);
+    sm->items_len++;
+}
+
+
+buf_t *buf_new(size_t bytes_size) {
+    if (bytes_size == 0) {
+//        buf_size = 1024;
+        bytes_size = 0;
+    }
+
+    buf_t *buf = malloc(sizeof(buf_t));
+    buf->bytes_len = 0;
+    buf->bytes_size = bytes_size;
+    buf->bytes = malloc(buf->bytes_size);
+}
+
+void buf_free(buf_t *buf) {
+    assert(buf->bytes != NULL);
+    free(buf->bytes);
+    buf->bytes = NULL;
+    free(buf);
+}
+
+int buf_append(buf_t *buf, char *bytes, size_t len) {
+    // If not enough capacity to append bytes, expand the bytes buffer.
+    if (len > buf->bytes_size - buf->bytes_len) {
+        char *bs = realloc(buf->bytes, buf->bytes_len + len);
+        if (bs == NULL) {
+            return -1;
+        }
+        buf->bytes = bs;
+    }
+    memcpy(buf->bytes + buf->bytes_len, bytes, len);
+    buf->bytes_len += len;
+    return 0;
+}
+
+/** httpreq functions **/
 
 httpreq_t *httpreq_new() {
     httpreq_t *req = malloc(sizeof(httpreq_t));
     req->method = NULL;
     req->uri = NULL;
     req->version = NULL;
-    req->body = NULL;
-    req->body_len = 0;
-
-    req->headers_size = 10; // start with room for n headers
-    req->headers_len = 0;
-    req->headers = create_headers(req->headers_size);
+    req->headers = stringmap_new(10); // initial room for n headers
+    req->body = buf_new(0);
 }
 
 void httpreq_free(httpreq_t *req) {
     if (req->method) free(req->method);
     if (req->uri) free(req->uri);
     if (req->version) free(req->version);
-    if (req->body) free(req->body);
-    free_headers(req->headers, req->headers_len);
+    stringmap_free(req->headers);
+    buf_free(req->body);
 
     req->method = NULL;
     req->uri = NULL;
     req->version = NULL;
-    req->body = NULL;
     req->headers = NULL;
+    req->body = NULL;
     free(req);
 }
 
@@ -264,16 +317,7 @@ int httpreq_parse_request_line(httpreq_t *req, char *line) {
 }
 
 void httpreq_add_header(httpreq_t *req, char *k, char *v) {
-    assert(req->headers_size >= req->headers_len);
-
-    if (req->headers_len == req->headers_size) {
-        req->headers_size += 10;
-        req->headers = realloc(req->headers, req->headers_size * sizeof(keyval_t));
-    }
-
-    req->headers[req->headers_len].k = strdup(k);
-    req->headers[req->headers_len].v = strdup(v);
-    req->headers_len++;
+    stringmap_set(req->headers, k, v);
 }
 
 // Parse header line
@@ -306,25 +350,7 @@ int httpreq_parse_header_line(httpreq_t *req, char *line) {
 }
 
 int httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len) {
-    // First time setting the body.
-    if (req->body == NULL) {
-        req->body = malloc(bytes_len);
-        if (req->body == NULL) {
-            return -1;
-        }
-        memcpy(req->body, bytes, bytes_len);
-        req->body_len = bytes_len;
-        return 0;
-    }
-
-    // Append bytes to existing body.
-    req->body = realloc(req->body, req->body_len + bytes_len);
-    if (req->body == NULL) {
-        return -1;
-    }
-    memcpy(req->body + req->body_len, bytes, bytes_len);
-    req->body_len += bytes_len;
-    return 0;
+    buf_append(req->body, bytes, bytes_len);
 }
 
 void httpreq_debugprint(httpreq_t *req) {
@@ -337,18 +363,18 @@ void httpreq_debugprint(httpreq_t *req) {
     if (req->version) {
         printf("version: %s\n", req->version);
     }
-    printf("headers_size: %ld\n", req->headers_size);
-    printf("headers_len: %ld\n", req->headers_len);
+    printf("headers_size: %ld\n", req->headers->items_size);
+    printf("headers_len: %ld\n", req->headers->items_len);
 
     printf("Headers:\n");
-    for (int i=0; i < req->headers_len; i++) {
-        printf("%s: %s\n", req->headers[i].k, req->headers[i].v);
+    for (int i=0; i < req->headers->items_len; i++) {
+        printf("%s: %s\n", req->headers->items[i].k, req->headers->items[i].v);
     }
 
     if (req->body) {
         printf("Body:\n");
-        for (int i=0; i < req->body_len; i++) {
-            putchar(req->body[i]);
+        for (int i=0; i < req->body->bytes_len; i++) {
+            putchar(req->body->bytes[i]);
         }
         printf("\n");
     }
@@ -361,24 +387,20 @@ httpresp_t *httpresp_new() {
     resp->status = 0;
     resp->statustext = NULL;
     resp->version = NULL;
-    resp->body = NULL;
-    resp->body_len = 0;
-
-    resp->headers_size = 10; // start with room for n headers
-    resp->headers_len = 0;
-    resp->headers = create_headers(resp->headers_size);
+    resp->headers = stringmap_new(10); // initial room for n headers
+    resp->body = buf_new(0);
 }
 
 void httpresp_free(httpresp_t *resp) {
     if (resp->statustext) free(resp->statustext);
     if (resp->version) free(resp->version);
-    if (resp->body) free(resp->body);
-    free_headers(resp->headers, resp->headers_len);
+    stringmap_free(resp->headers);
+    buf_free(resp->body);
 
     resp->statustext = NULL;
     resp->version = NULL;
-    resp->body = NULL;
     resp->headers = NULL;
+    resp->body = NULL;
     free(resp);
 }
 

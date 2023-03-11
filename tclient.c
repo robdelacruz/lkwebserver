@@ -86,7 +86,6 @@ int main(int argc, char *argv[]) {
         if (z == -1) {
             exit_err("send()");
         }
-        sleep(1);
     }
 
     close(sock);
