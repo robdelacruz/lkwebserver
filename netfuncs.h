@@ -71,7 +71,7 @@ void chomp(char* s);
 
 /** sockbuf functions **/
 sockbuf_t *sockbuf_new(int sock, size_t initial_size);
-void free_sockbuf(sockbuf_t *sb);
+void sockbuf_free(sockbuf_t *sb);
 
 // Read CR terminated line from socket using buffered input.
 ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len);
@@ -80,6 +80,10 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len);
 /** httpreq functions **/
 httpreq_t *httpreq_new();
 void httpreq_free(httpreq_t *req);
+
+// Return whether valid http request.
+int is_valid_http_method(char *method);
+int httpreq_is_valid(httpreq_t *req);
 
 // Parse http request initial line into req.
 int httpreq_parse_request_line(httpreq_t *req, char *line);

@@ -271,6 +271,31 @@ void httpreq_free(httpreq_t *req) {
     free(req);
 }
 
+int is_valid_http_method(char *method) {
+    if (method == NULL) {
+        return 0;
+    }
+
+    if (!strcasecmp(method, "GET")      ||
+        !strcasecmp(method, "POST")     || 
+        !strcasecmp(method, "PUT")      || 
+        !strcasecmp(method, "DELETE")   ||
+        !strcasecmp(method, "HEAD"))  {
+        return 1;
+    }
+
+    return 0;
+}
+
+int httpreq_is_valid(httpreq_t *req) {
+    if (req->method == NULL || req->uri == NULL) {
+        return 0;
+    }
+    if (!is_valid_http_method(req->method)) {
+        return 0;
+    }
+}
+
 // Parse initial request line
 // Ex. GET /path/to/index.html HTTP/1.0
 int httpreq_parse_request_line(httpreq_t *req, char *line) {
@@ -300,10 +325,7 @@ int httpreq_parse_request_line(httpreq_t *req, char *line) {
     char *uri = toks[1];
     char *version = toks[2];
 
-    if (strcmp(method, "GET") != 0 &&
-        strcmp(method, "POST") != 0 && 
-        strcmp(method, "PUT") != 0 && 
-        strcmp(method, "DELETE") != 0) {
+    if (!is_valid_http_method(method)) {
         free(linetmp);
         return -1;
     }

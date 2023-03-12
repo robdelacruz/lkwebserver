@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -233,6 +234,67 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+void close_client(clientctx_t *ctx) {
+    // Remove client from client list.
+    clientctx_t *prev = NULL;
+    clientctx_t *p = ctxhead;
+    while (p != NULL) {
+        if (p == ctx) {
+            if (prev == NULL) {
+                ctxhead = p->next;
+            } else {
+                prev->next = p->next;
+            }
+            break;
+        }
+        prev = p;
+        p = p->next;
+    }
+
+    // Free ctx resources
+    close(ctx->sock);
+    sockbuf_free(ctx->sb);
+    httpreq_free(ctx->req);
+    if (ctx->partial_line) {
+        free(ctx->partial_line);
+    }
+    free(ctx);
+}
+
+void send_response(int clientsock, httpresp_t *resp) {
+}
+
+int is_supported_http_method(char *method) {
+    if (method == NULL) {
+        return 0;
+    }
+
+    if (!strcasecmp(method, "GET")      ||
+        !strcasecmp(method, "HEAD"))  {
+        return 1;
+    }
+
+    return 0;
+}
+
+void process_client_request(clientctx_t *ctx) {
+    if (!httpreq_is_valid(ctx->req)) {
+        return;
+    }
+
+    // Invalid request method: 501 Unknown method ('GET2')
+    if (!is_valid_http_method(ctx->req->method)) {
+        httpresp_t *resp = httpresp_new();
+        resp->status = 501;
+
+        asprintf(&resp->statustext, "Unsupported method ('%s')", ctx->req->method);
+        send_response(ctx->sock, resp);
+        httpresp_free(resp);
+        return;
+    }
+
+}
+
 void process_line(clientctx_t *ctx, char *line) {
     if (ctx->nlinesread == 0) {
         int z = httpreq_parse_request_line(ctx->req, line);
@@ -251,6 +313,10 @@ void process_line(clientctx_t *ctx, char *line) {
         printf("--- HTTP REQUEST received ---\n");
         httpreq_debugprint(ctx->req);
         printf("-----------------------------\n");
+
+        if (httpreq_is_valid(ctx->req)) {
+            process_client_request(ctx);
+        }
         return;
     }
 
