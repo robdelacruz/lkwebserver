@@ -222,6 +222,7 @@ buf_t *buf_new(size_t bytes_size) {
     buf->bytes_len = 0;
     buf->bytes_size = bytes_size;
     buf->bytes = malloc(buf->bytes_size);
+    return buf;
 }
 
 void buf_free(buf_t *buf) {
@@ -254,6 +255,7 @@ httpreq_t *httpreq_new() {
     req->version = NULL;
     req->headers = stringmap_new(10); // initial room for n headers
     req->body = buf_new(0);
+    return req;
 }
 
 void httpreq_free(httpreq_t *req) {
@@ -271,34 +273,9 @@ void httpreq_free(httpreq_t *req) {
     free(req);
 }
 
-int is_valid_http_method(char *method) {
-    if (method == NULL) {
-        return 0;
-    }
-
-    if (!strcasecmp(method, "GET")      ||
-        !strcasecmp(method, "POST")     || 
-        !strcasecmp(method, "PUT")      || 
-        !strcasecmp(method, "DELETE")   ||
-        !strcasecmp(method, "HEAD"))  {
-        return 1;
-    }
-
-    return 0;
-}
-
-int httpreq_is_valid(httpreq_t *req) {
-    if (req->method == NULL || req->uri == NULL) {
-        return 0;
-    }
-    if (!is_valid_http_method(req->method)) {
-        return 0;
-    }
-}
-
 // Parse initial request line
 // Ex. GET /path/to/index.html HTTP/1.0
-int httpreq_parse_request_line(httpreq_t *req, char *line) {
+void httpreq_parse_request_line(httpreq_t *req, char *line) {
     char *toks[3];
     int ntoksread = 0;
 
@@ -316,26 +293,19 @@ int httpreq_parse_request_line(httpreq_t *req, char *line) {
         p = NULL; // for the next call to strtok_r()
     }
 
-    if (ntoksread < 3) {
-        free(linetmp);
-        return -1;
-    }
+    char *method = "";
+    char *uri = "";
+    char *version = "";
 
-    char *method = toks[0];
-    char *uri = toks[1];
-    char *version = toks[2];
-
-    if (!is_valid_http_method(method)) {
-        free(linetmp);
-        return -1;
-    }
+    if (ntoksread > 0) method = toks[0];
+    if (ntoksread > 1) uri = toks[1];
+    if (ntoksread > 2) version = toks[2];
 
     req->method = strdup(method);
     req->uri = strdup(uri);
     req->version = strdup(version);
 
     free(linetmp);
-    return 0;
 }
 
 void httpreq_add_header(httpreq_t *req, char *k, char *v) {
@@ -344,7 +314,7 @@ void httpreq_add_header(httpreq_t *req, char *k, char *v) {
 
 // Parse header line
 // Ex. User-Agent: browser
-int httpreq_parse_header_line(httpreq_t *req, char *line) {
+void httpreq_parse_header_line(httpreq_t *req, char *line) {
     char *saveptr;
     char *delim = ":";
 
@@ -353,12 +323,11 @@ int httpreq_parse_header_line(httpreq_t *req, char *line) {
     char *k = strtok_r(linetmp, delim, &saveptr);
     if (k == NULL) {
         free(linetmp);
-        return -1;
+        return;
     }
     char *v = strtok_r(NULL, delim, &saveptr);
     if (v == NULL) {
-        free(linetmp);
-        return -1;
+        v = "";
     }
 
     // skip over leading whitespace
@@ -368,10 +337,9 @@ int httpreq_parse_header_line(httpreq_t *req, char *line) {
     httpreq_add_header(req, k, v);
 
     free(linetmp);
-    return 0;
 }
 
-int httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len) {
+void httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len) {
     buf_append(req->body, bytes, bytes_len);
 }
 
@@ -411,6 +379,7 @@ httpresp_t *httpresp_new() {
     resp->version = NULL;
     resp->headers = stringmap_new(10); // initial room for n headers
     resp->body = buf_new(0);
+    return resp;
 }
 
 void httpresp_free(httpresp_t *resp) {

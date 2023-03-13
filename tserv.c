@@ -19,8 +19,6 @@
 
 #define LISTEN_PORT "5000"
 
-void handle_client(int clientfd);
-
 typedef struct clientctx {
     int sock;                   // client socket
     sockbuf_t *sb;              // input buffer for reading lines
@@ -31,6 +29,12 @@ typedef struct clientctx {
     int empty_line_parsed;      // flag indicating whether empty line received
     struct clientctx *next;     // linked list to next client
 } clientctx_t;
+
+void handle_client(int clientfd);
+void process_line(clientctx_t *ctx, char *line);
+void process_client_request(clientctx_t *ctx);
+int is_valid_http_method(char *method);
+void send_response(int clientsock, httpresp_t *resp);
 
 clientctx_t *ctxhead = NULL;
 
@@ -234,102 +238,6 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void close_client(clientctx_t *ctx) {
-    // Remove client from client list.
-    clientctx_t *prev = NULL;
-    clientctx_t *p = ctxhead;
-    while (p != NULL) {
-        if (p == ctx) {
-            if (prev == NULL) {
-                ctxhead = p->next;
-            } else {
-                prev->next = p->next;
-            }
-            break;
-        }
-        prev = p;
-        p = p->next;
-    }
-
-    // Free ctx resources
-    close(ctx->sock);
-    sockbuf_free(ctx->sb);
-    httpreq_free(ctx->req);
-    if (ctx->partial_line) {
-        free(ctx->partial_line);
-    }
-    free(ctx);
-}
-
-void send_response(int clientsock, httpresp_t *resp) {
-}
-
-int is_supported_http_method(char *method) {
-    if (method == NULL) {
-        return 0;
-    }
-
-    if (!strcasecmp(method, "GET")      ||
-        !strcasecmp(method, "HEAD"))  {
-        return 1;
-    }
-
-    return 0;
-}
-
-void process_client_request(clientctx_t *ctx) {
-    if (!httpreq_is_valid(ctx->req)) {
-        return;
-    }
-
-    // Invalid request method: 501 Unknown method ('GET2')
-    if (!is_valid_http_method(ctx->req->method)) {
-        httpresp_t *resp = httpresp_new();
-        resp->status = 501;
-
-        asprintf(&resp->statustext, "Unsupported method ('%s')", ctx->req->method);
-        send_response(ctx->sock, resp);
-        httpresp_free(resp);
-        return;
-    }
-
-}
-
-void process_line(clientctx_t *ctx, char *line) {
-    if (ctx->nlinesread == 0) {
-        int z = httpreq_parse_request_line(ctx->req, line);
-        if (z == -1) {
-            printf("Invalid request line: '%s'\n", line);
-        }
-
-        ctx->nlinesread++;
-        return;
-    }
-
-    if (is_empty_line(line)) {
-        ctx->empty_line_parsed = 1;
-        ctx->nlinesread++;
-
-        printf("--- HTTP REQUEST received ---\n");
-        httpreq_debugprint(ctx->req);
-        printf("-----------------------------\n");
-
-        if (httpreq_is_valid(ctx->req)) {
-            process_client_request(ctx);
-        }
-        return;
-    }
-
-    if (!ctx->empty_line_parsed) {
-        httpreq_parse_header_line(ctx->req, line);
-        ctx->nlinesread++;
-        return;
-    }
-
-    httpreq_append_body(ctx->req, line, strlen(line));
-    ctx->nlinesread++;
-}
-
 void handle_client(int clientfd) {
     clientctx_t *ctx = ctxhead;
     while (ctx != NULL && ctx->sock != clientfd) {
@@ -378,5 +286,107 @@ void handle_client(int clientfd) {
 
 }
 
+void process_line(clientctx_t *ctx, char *line) {
+    if (ctx->nlinesread == 0) {
+        httpreq_parse_request_line(ctx->req, line);
+        ctx->nlinesread++;
+        return;
+    }
 
+    if (is_empty_line(line)) {
+        ctx->empty_line_parsed = 1;
+        ctx->nlinesread++;
+
+        printf("--- HTTP REQUEST received ---\n");
+        httpreq_debugprint(ctx->req);
+        printf("-----------------------------\n");
+
+        process_client_request(ctx);
+        return;
+    }
+
+    if (!ctx->empty_line_parsed) {
+        httpreq_parse_header_line(ctx->req, line);
+        ctx->nlinesread++;
+        return;
+    }
+
+    //httpreq_append_body(ctx->req, line, strlen(line));
+    ctx->nlinesread++;
+}
+
+void process_client_request(clientctx_t *ctx) {
+    char *method = ctx->req->method ? ctx->req->method : "";
+
+    // Invalid request method: 501 Unknown method ('GET2')
+    if (!is_valid_http_method(method)) {
+        httpresp_t *resp = httpresp_new();
+        resp->status = 501;
+
+        asprintf(&resp->statustext, "Unsupported method ('%s')", method);
+        send_response(ctx->sock, resp);
+        httpresp_free(resp);
+        return;
+    }
+
+}
+
+int is_valid_http_method(char *method) {
+    if (method == NULL) {
+        return 0;
+    }
+
+    if (!strcasecmp(method, "GET")      ||
+        !strcasecmp(method, "POST")     || 
+        !strcasecmp(method, "PUT")      || 
+        !strcasecmp(method, "DELETE")   ||
+        !strcasecmp(method, "HEAD"))  {
+        return 1;
+    }
+
+    return 0;
+}
+
+void close_client(clientctx_t *ctx) {
+    // Remove client from client list.
+    clientctx_t *prev = NULL;
+    clientctx_t *p = ctxhead;
+    while (p != NULL) {
+        if (p == ctx) {
+            if (prev == NULL) {
+                ctxhead = p->next;
+            } else {
+                prev->next = p->next;
+            }
+            break;
+        }
+        prev = p;
+        p = p->next;
+    }
+
+    // Free ctx resources
+    close(ctx->sock);
+    sockbuf_free(ctx->sb);
+    httpreq_free(ctx->req);
+    if (ctx->partial_line) {
+        free(ctx->partial_line);
+    }
+    free(ctx);
+}
+
+void send_response(int clientsock, httpresp_t *resp) {
+}
+
+int is_supported_http_method(char *method) {
+    if (method == NULL) {
+        return 0;
+    }
+
+    if (!strcasecmp(method, "GET")      ||
+        !strcasecmp(method, "HEAD"))  {
+        return 1;
+    }
+
+    return 0;
+}
 

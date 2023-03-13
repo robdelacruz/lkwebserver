@@ -59,8 +59,6 @@ int main(int argc, char *argv[]) {
 
     printf("Connected to %s:%s\n", server_domain, server_port);
 
-    sockbuf_t *servsb = sockbuf_new(sock, 0);
-
     char *chunks[] = {
         "GET /www/index.html HTTP/1.0\r\n", 
         "From: rob@rob", 

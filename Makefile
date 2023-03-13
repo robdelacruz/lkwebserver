@@ -1,4 +1,4 @@
-CFLAGS=
+CFLAGS=-g -Wall
 LIBS=
 
 all: tserv tclient t

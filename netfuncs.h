@@ -81,21 +81,17 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len);
 httpreq_t *httpreq_new();
 void httpreq_free(httpreq_t *req);
 
-// Return whether valid http request.
-int is_valid_http_method(char *method);
-int httpreq_is_valid(httpreq_t *req);
-
 // Parse http request initial line into req.
-int httpreq_parse_request_line(httpreq_t *req, char *line);
+void httpreq_parse_request_line(httpreq_t *req, char *line);
 
 // Parse an http header line into req.
-int httpreq_parse_header_line(httpreq_t *req, char *line);
+void httpreq_parse_header_line(httpreq_t *req, char *line);
 
 // Add a key/val http header into req.
 void httpreq_add_header(httpreq_t *req, char *k, char *v);
 
 // Append to req message body.
-int httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len);
+void httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len);
 
 // Print contents of req.
 void httpreq_debugprint(httpreq_t *req);

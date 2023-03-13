@@ -34,7 +34,6 @@ int is_empty_line(char *s) {
 }
 
 int main(int argc, char *argv[]) {
-    int z;
     httpreq_t *req = httpreq_new();
 
     char *lines[] = {
@@ -64,10 +63,7 @@ int main(int argc, char *argv[]) {
     for (int i=0; i < sizeof(lines) / sizeof(char *); i++) {
         // initial line
         if (i == 0) {
-            if (httpreq_parse_request_line(req, lines[i]) == -1) {
-                // If initial line is invalid, stop parsing.
-                break;
-            }
+            httpreq_parse_request_line(req, lines[i]);
             continue;
         }
 
