@@ -18,15 +18,20 @@
 #include "netfuncs.h"
 
 #define LISTEN_PORT "5000"
+#define RESPONSE_LINE_MAXSIZE 2048
 
 typedef struct clientctx {
     int sock;                   // client socket
     sockbuf_t *sb;              // input buffer for reading lines
     httpreq_t *req;             // http request being parsed
+
     char *partial_line;         // partial line from previous read
-                                // (to combine with next line)
     int nlinesread;             // number of lines read so far
     int empty_line_parsed;      // flag indicating whether empty line received
+
+    buf_t *respbuf;             // response bytes to send to client
+    size_t respbuf_bytes_sent;  // number of respbuf bytes sent so far
+
     struct clientctx *next;     // linked list to next client
 } clientctx_t;
 
@@ -111,6 +116,9 @@ void handle_sigchld(int sig) {
     errno = tmp_errno;
 }
 
+fd_set readfds;
+fd_set writefds;
+
 int main(int argc, char *argv[]) {
     int z;
 
@@ -160,10 +168,11 @@ int main(int argc, char *argv[]) {
     }
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
 
-    fd_set readfds;
     FD_ZERO(&readfds);
     FD_SET(s0, &readfds);
     int maxfd = s0;
+
+    FD_ZERO(&writefds);
 
     while (1) {
         // readfds contain the master list of read sockets
@@ -207,6 +216,8 @@ int main(int argc, char *argv[]) {
                 ctx->partial_line = NULL;
                 ctx->nlinesread = 0;
                 ctx->empty_line_parsed = 0;
+                ctx->respbuf = buf_new(0);
+                ctx->respbuf_bytes_sent = 0;
                 ctx->next = NULL;
 
                 if (ctxhead == NULL) {
@@ -316,16 +327,18 @@ void process_line(clientctx_t *ctx, char *line) {
 }
 
 void process_client_request(clientctx_t *ctx) {
+    char resp_line[RESPONSE_LINE_MAXSIZE];
     char *method = ctx->req->method ? ctx->req->method : "";
 
     // Invalid request method: 501 Unknown method ('GET2')
     if (!is_valid_http_method(method)) {
-        httpresp_t *resp = httpresp_new();
-        resp->status = 501;
+        int resp_line_len = snprintf(resp_line, RESPONSE_LINE_MAXSIZE,
+            "HTTP/1.0 501 Unsupported method ('%s')\n", method);
+        buf_append(ctx->respbuf, resp_line, resp_line_len);
 
-        asprintf(&resp->statustext, "Unsupported method ('%s')", method);
-        send_response(ctx->sock, resp);
-        httpresp_free(resp);
+        puts(resp_line);
+
+        FD_SET(ctx->sock, &writefds);
         return;
     }
 
