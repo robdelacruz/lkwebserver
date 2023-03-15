@@ -59,7 +59,8 @@ void buf_free(buf_t *buf);
 int buf_append(buf_t *buf, char *bytes, size_t len);
 
 /** Helper socket functions **/
-ssize_t sock_recvn(int sock, char *buf, size_t count);
+ssize_t sock_recv(int sock, char *buf, size_t count);
+ssize_t sock_send(int sock, char *buf, size_t count);
 void set_sock_timeout(int sock, int nsecs, int ms);
 void set_sock_nonblocking(int sock);
 

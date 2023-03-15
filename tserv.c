@@ -29,8 +29,15 @@ typedef struct clientctx {
     int nlinesread;             // number of lines read so far
     int empty_line_parsed;      // flag indicating whether empty line received
 
-    buf_t *respbuf;             // response bytes to send to client
-    size_t respbuf_bytes_sent;  // number of respbuf bytes sent so far
+    // buffer containing response head including blank line
+    // with number of response head bytes sent so far
+    buf_t *resphead;
+    size_t resphead_bytes_sent;
+
+    // buffer containing response body
+    // with number of body bytes sent so far
+    buf_t *respbody;
+    size_t respbody_bytes_sent;
 
     struct clientctx *next;     // linked list to next client
 } clientctx_t;
@@ -108,16 +115,16 @@ int main(int argc, char *argv[]) {
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
 
     FD_ZERO(&readfds);
-    FD_SET(s0, &readfds);
-    int maxreadfd = s0;
-
     FD_ZERO(&writefds);
-    int maxwritefd = -1;
+
+    FD_SET(s0, &readfds);
+    int maxfd = s0;
 
     while (1) {
         // readfds contain the master list of read sockets
-        fd_set fds = readfds;
-        z = select(maxreadfd+1, &fds, NULL, NULL, NULL);
+        fd_set cur_readfds = readfds;
+        fd_set cur_writefds = writefds;
+        z = select(maxfd+1, &cur_readfds, &cur_writefds, NULL, NULL);
         if (z == -1) {
             exit_err("select()");
         }
@@ -127,61 +134,41 @@ int main(int argc, char *argv[]) {
         }
 
         // fds now contain list of clients with data available to be read.
-        for (int i=0; i <= maxreadfd; i++) {
-            if (!FD_ISSET(i, &fds)) {
-                continue;
-            }
+        for (int i=0; i <= maxfd; i++) {
+            if (FD_ISSET(i, &cur_readfds)) {
+                // New client connection
+                if (i == s0) {
+                    struct sockaddr_in a;
+                    socklen_t a_len = sizeof(a);
+                    int newclientsock = accept(s0, (struct sockaddr*)&a, &a_len);
+                    if (newclientsock == -1) {
+                        print_err("accept()");
+                        continue;
+                    }
 
-            // New client connection
-            if (i == s0) {
-                struct sockaddr_in a;
-                socklen_t a_len = sizeof(a);
-                int newclientsock = accept(s0, (struct sockaddr*)&a, &a_len);
-                if (newclientsock == -1) {
-                    print_err("accept()");
+                    // Add new client socket to list of read sockets.
+                    FD_SET(newclientsock, &readfds);
+                    if (newclientsock > maxfd) {
+                        maxfd = newclientsock;
+                    }
+
+                    printf("New client fd: %d\n", newclientsock);
+                    clientctx_t *ctx = clientctx_new(newclientsock);
+                    append_clientctx_list(&ctxhead, ctx);
                     continue;
+                } else {
+                    // i contains client socket with data available to be read.
+                    int clientfd = i;
+                    read_request_from_client(clientfd);
+
+                    //FD_CLR(clientfd, &readfds);
+                    //close(clientfd);
                 }
-
-                // Add new client socket to list of read sockets.
-                FD_SET(newclientsock, &readfds);
-                if (newclientsock > maxreadfd) {
-                    maxreadfd = newclientsock;
-                }
-
-                printf("New client fd: %d\n", newclientsock);
-                clientctx_t *ctx = clientctx_new(newclientsock);
-                append_clientctx_list(&ctxhead, ctx);
-                continue;
+            } else if (FD_ISSET(i, &cur_writefds)) {
+                // i contains client socket ready to be written to.
+                int clientfd = i;
+                send_response_to_client(clientfd);
             }
-
-            // i contains client socket with data available to be read.
-            int clientfd = i;
-            read_request_from_client(clientfd);
-
-            //FD_CLR(clientfd, &readfds);
-            //close(clientfd);
-        }
-
-        // writefds contain the master list of read sockets
-        fds = writefds;
-        z = select(maxwritefd+1, NULL, &fds, NULL, NULL);
-        if (z == -1) {
-            exit_err("select()");
-        }
-        if (z == 0) {
-            // timeout returned
-            continue;
-        }
-
-        // fds now contain list of clients ready to be written to.
-        for (int i=0; i <= maxwritefd; i++) {
-            if (!FD_ISSET(i, &fds)) {
-                continue;
-            }
-
-            // i contains client socket ready to be written to.
-            int clientfd = i;
-            send_response_to_client(clientfd);
         }
     } // while (1)
 
@@ -198,8 +185,10 @@ clientctx_t *clientctx_new(int sock) {
     ctx->partial_line = NULL;
     ctx->nlinesread = 0;
     ctx->empty_line_parsed = 0;
-    ctx->respbuf = buf_new(0);
-    ctx->respbuf_bytes_sent = 0;
+    ctx->resphead = buf_new(0);
+    ctx->resphead_bytes_sent = 0;
+    ctx->respbody = buf_new(0);
+    ctx->respbody_bytes_sent = 0;
     ctx->next = NULL;
     return ctx;
 }
@@ -367,21 +356,52 @@ void process_line(clientctx_t *ctx, char *line) {
         return;
     }
 
-    //httpreq_append_body(ctx->req, line, strlen(line));
+    httpreq_append_body(ctx->req, line, strlen(line));
     ctx->nlinesread++;
 }
 
 void process_client_request(clientctx_t *ctx) {
-    char resp_line[RESPONSE_LINE_MAXSIZE];
+    static char *html_error_start =
+        "<!DOCTYPE html>\n"
+        "<html>\n"
+        "<head><title>Error response</title></head>\n"
+        "<body><h1>Error response</h1>\n";
+    static char *html_error_end =
+        "</body></html>\n";
+
+    char line[RESPONSE_LINE_MAXSIZE];
+    int line_len;
     char *method = ctx->req->method ? ctx->req->method : "";
 
     // Invalid request method: 501 Unknown method ('GET2')
     if (!is_valid_http_method(method)) {
-        int resp_line_len = snprintf(resp_line, RESPONSE_LINE_MAXSIZE,
-            "HTTP/1.0 501 Unsupported method ('%s')\n", method);
-        buf_append(ctx->respbuf, resp_line, resp_line_len);
+        // Compose respbody buffer
+        buf_append(ctx->respbody, html_error_start, strlen(html_error_start));
+        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
+            "<p>Error code: 501</p>\n");
+        buf_append(ctx->respbody, line, line_len);
+        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
+            "<p>Message: Unsupported method ('%s').</p>\n", method);
+        buf_append(ctx->respbody, line, line_len);
+        buf_append(ctx->respbody, html_error_end, strlen(html_error_end));
 
-        puts(resp_line);
+        // Compose resphead buffer
+        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
+            "HTTP/1.0 501 Unsupported method ('%s')\n", method);
+        buf_append(ctx->resphead, line, line_len);
+
+        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
+            "Server: LittleKitten/0.1\n");
+        buf_append(ctx->resphead, line, line_len);
+
+        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
+            "Content-Type: text/html\n");
+        buf_append(ctx->resphead, line, line_len);
+
+        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
+            "Content-Length: %ld\n", ctx->respbody->bytes_len);
+        buf_append(ctx->resphead, line, line_len);
+        buf_append(ctx->resphead, "\r\n", 2);
 
         FD_SET(ctx->sock, &writefds);
         return;
@@ -456,6 +476,25 @@ void send_response_to_client(int clientfd) {
     }
     assert(ctx->sock == clientfd);
     assert(ctx->sb->sock == clientfd);
+
+    // Send as much response bytes as the client will receive.
+    // response header (resphead) gets sent first,
+    // followed by response body (respbody).
+    if (ctx->resphead_bytes_sent < ctx->resphead->bytes_len) {
+        // send resphead
+        int nbytes_sent = sock_send(ctx->sock,
+            ctx->resphead->bytes + ctx->resphead_bytes_sent,
+            ctx->resphead->bytes_len - ctx->resphead_bytes_sent);
+        ctx->resphead_bytes_sent -= nbytes_sent;
+    } else if (ctx->respbody_bytes_sent < ctx->respbody->bytes_len) {
+        // send respbody
+        int nbytes_sent = sock_send(ctx->sock,
+            ctx->respbody->bytes + ctx->respbody_bytes_sent,
+            ctx->respbody->bytes_len - ctx->respbody_bytes_sent);
+        ctx->respbody_bytes_sent -= nbytes_sent;
+    } else {
+        FD_CLR(ctx->sock, &writefds);
+    }
 
 }
 

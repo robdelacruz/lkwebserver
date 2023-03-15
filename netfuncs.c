@@ -33,7 +33,7 @@ void set_sock_nonblocking(int sock) {
 
 // Receive count bytes into buf.
 // Returns num bytes received or -1 for error.
-ssize_t sock_recvn(int sock, char *buf, size_t count) {
+ssize_t sock_recv(int sock, char *buf, size_t count) {
     memset(buf, '*', count); // initialize for debugging purposes.
 
     int nread = 0;
@@ -59,6 +59,34 @@ ssize_t sock_recvn(int sock, char *buf, size_t count) {
     }
 
     return nread;
+}
+
+// Send count buf bytes into sock.
+// Returns num bytes sent or -1 for error.
+ssize_t sock_send(int sock, char *buf, size_t count) {
+    int nsent = 0;
+    while (nsent < count) {
+        int z = send(sock, buf+nsent, count-nsent, MSG_DONTWAIT);
+        // socket closed, no more data
+        if (z == 0) {
+            break;
+        }
+        // interrupt occured during send, retry send.
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        // no data available at the moment, just return what we have.
+        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break;
+        }
+        // any other error
+        if (z == -1) {
+            return z;
+        }
+        nsent += z;
+    }
+
+    return nsent;
 }
 
 /** sockbuf functions **/
