@@ -361,13 +361,13 @@ void process_line(clientctx_t *ctx, char *line) {
 }
 
 void process_client_request(clientctx_t *ctx) {
-    static char *html_error_start =
-        "<!DOCTYPE html>\n"
-        "<html>\n"
-        "<head><title>Error response</title></head>\n"
-        "<body><h1>Error response</h1>\n";
+    static char *html_error_start = 
+       "<!DOCTYPE html>\n"
+       "<html>\n"
+       "<head><title>Error response</title></head>\n"
+       "<body><h1>Error response</h1>\n";
     static char *html_error_end =
-        "</body></html>\n";
+       "</body></html>\n";
 
     char line[RESPONSE_LINE_MAXSIZE];
     int line_len;
@@ -377,30 +377,24 @@ void process_client_request(clientctx_t *ctx) {
     if (!is_valid_http_method(method)) {
         // Compose respbody buffer
         buf_append(ctx->respbody, html_error_start, strlen(html_error_start));
-        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
-            "<p>Error code: 501</p>\n");
-        buf_append(ctx->respbody, line, line_len);
-        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
-            "<p>Message: Unsupported method ('%s').</p>\n", method);
-        buf_append(ctx->respbody, line, line_len);
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Error code: 501</p>\n");
+        buf_append(ctx->respbody, line, strlen(line));
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Message: Unsupported method ('%s').</p>\n", method);
+        buf_append(ctx->respbody, line, strlen(line));
         buf_append(ctx->respbody, html_error_end, strlen(html_error_end));
 
         // Compose resphead buffer
-        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
-            "HTTP/1.0 501 Unsupported method ('%s')\n", method);
-        buf_append(ctx->resphead, line, line_len);
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "HTTP/1.0 501 Unsupported method ('%s')\n", method);
+        buf_append(ctx->resphead, line, strlen(line));
 
-        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
-            "Server: LittleKitten/0.1\n");
-        buf_append(ctx->resphead, line, line_len);
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "Server: LittleKitten/0.1\n");
+        buf_append(ctx->resphead, line, strlen(line));
 
-        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
-            "Content-Type: text/html\n");
-        buf_append(ctx->resphead, line, line_len);
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Type: text/html\n");
+        buf_append(ctx->resphead, line, strlen(line));
 
-        line_len = snprintf(line, RESPONSE_LINE_MAXSIZE,
-            "Content-Length: %ld\n", ctx->respbody->bytes_len);
-        buf_append(ctx->resphead, line, line_len);
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Length: %ld\n", ctx->respbody->bytes_len);
+        buf_append(ctx->resphead, line, strlen(line));
         buf_append(ctx->resphead, "\r\n", 2);
 
         FD_SET(ctx->sock, &writefds);
@@ -485,15 +479,24 @@ void send_response_to_client(int clientfd) {
         int nbytes_sent = sock_send(ctx->sock,
             ctx->resphead->bytes + ctx->resphead_bytes_sent,
             ctx->resphead->bytes_len - ctx->resphead_bytes_sent);
-        ctx->resphead_bytes_sent -= nbytes_sent;
+        if (nbytes_sent == -1) {
+            return;
+        }
+        ctx->resphead_bytes_sent += nbytes_sent;
     } else if (ctx->respbody_bytes_sent < ctx->respbody->bytes_len) {
         // send respbody
         int nbytes_sent = sock_send(ctx->sock,
             ctx->respbody->bytes + ctx->respbody_bytes_sent,
             ctx->respbody->bytes_len - ctx->respbody_bytes_sent);
-        ctx->respbody_bytes_sent -= nbytes_sent;
+        if (nbytes_sent == -1) {
+            return;
+        }
+        ctx->respbody_bytes_sent += nbytes_sent;
     } else {
+        printf("FD_CLR ctx->sock: %d\n", ctx->sock);
+        FD_CLR(ctx->sock, &readfds);
         FD_CLR(ctx->sock, &writefds);
+        close(ctx->sock);
     }
 
 }

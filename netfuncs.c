@@ -263,11 +263,12 @@ void buf_free(buf_t *buf) {
 int buf_append(buf_t *buf, char *bytes, size_t len) {
     // If not enough capacity to append bytes, expand the bytes buffer.
     if (len > buf->bytes_size - buf->bytes_len) {
-        char *bs = realloc(buf->bytes, buf->bytes_len + len);
+        char *bs = realloc(buf->bytes, buf->bytes_size + len);
         if (bs == NULL) {
             return -1;
         }
         buf->bytes = bs;
+        buf->bytes_size += len;
     }
     memcpy(buf->bytes + buf->bytes_len, bytes, len);
     buf->bytes_len += len;
