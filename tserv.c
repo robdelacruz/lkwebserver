@@ -160,9 +160,6 @@ int main(int argc, char *argv[]) {
                     // i contains client socket with data available to be read.
                     int clientfd = i;
                     read_request_from_client(clientfd);
-
-                    //FD_CLR(clientfd, &readfds);
-                    //close(clientfd);
                 }
             } else if (FD_ISSET(i, &cur_writefds)) {
                 // i contains client socket ready to be written to.
@@ -346,6 +343,8 @@ void process_line(clientctx_t *ctx, char *line) {
         httpreq_debugprint(ctx->req);
         printf("-----------------------------\n");
 
+        //FD_CLR(ctx->sock, &readfds);
+        //shutdown(ctx->sock, SHUT_RD);
         process_client_request(ctx);
         return;
     }
@@ -493,10 +492,9 @@ void send_response_to_client(int clientfd) {
         }
         ctx->respbody_bytes_sent += nbytes_sent;
     } else {
-        printf("FD_CLR ctx->sock: %d\n", ctx->sock);
-        FD_CLR(ctx->sock, &readfds);
-        FD_CLR(ctx->sock, &writefds);
-        close(ctx->sock);
+        //printf("FD_CLR ctx->sock: %d\n", ctx->sock);
+        //FD_CLR(ctx->sock, &writefds);
+        //shutdown(ctx->sock, SHUT_WR);
     }
 
 }

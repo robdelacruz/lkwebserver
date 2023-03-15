@@ -77,6 +77,9 @@ int main(int argc, char *argv[]) {
         if (z == -1) {
             exit_err("send()");
         }
+        if (z == 0) {
+            break;
+        }
     }
 
     printf("Response:\n");
