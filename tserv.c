@@ -35,13 +35,191 @@ typedef struct clientctx {
     struct clientctx *next;     // linked list to next client
 } clientctx_t;
 
-void handle_client(int clientfd);
+clientctx_t *clientctx_new(int sock);
+void append_clientctx_list(clientctx_t **pphead, clientctx_t *ctx);
+
+void print_err(char *s);
+void exit_err(char *s);
+int is_empty_line(char *s);
+int ends_with_newline(char *s);
+char *append_string(char *dst, char *s);
+void *addrinfo_sin_addr(struct addrinfo *addr);
+void handle_sigint(int sig);
+void handle_sigchld(int sig);
+
+void read_request_from_client(int clientfd);
 void process_line(clientctx_t *ctx, char *line);
 void process_client_request(clientctx_t *ctx);
 int is_valid_http_method(char *method);
-void send_response(int clientsock, httpresp_t *resp);
+
+void send_response_to_client(int clientfd);
 
 clientctx_t *ctxhead = NULL;
+fd_set readfds;
+fd_set writefds;
+
+int main(int argc, char *argv[]) {
+    int z;
+
+    signal(SIGINT, handle_sigint);
+    signal(SIGCHLD, handle_sigchld);
+
+    // Get this server's address.
+    struct addrinfo hints, *servaddr;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    z = getaddrinfo("localhost", LISTEN_PORT, &hints, &servaddr);
+    if (z != 0) {
+        exit_err("getaddrinfo()");
+    }
+
+    // Get human readable IP address string in servipstr.
+    char servipstr[INET6_ADDRSTRLEN];
+    const char *pz = inet_ntop(servaddr->ai_family, addrinfo_sin_addr(servaddr), servipstr, sizeof(servipstr));
+    if (pz ==NULL) {
+        exit_err("inet_ntop()");
+    }
+
+    int s0 = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
+    if (s0 == -1) {
+        exit_err("socket()");
+    }
+
+    int yes=1;
+    z = setsockopt(s0, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    if (s0 == -1) {
+        exit_err("setsockopt(SO_REUSEADDR)");
+    }
+
+    z = bind(s0, servaddr->ai_addr, servaddr->ai_addrlen);
+    if (z != 0) {
+        exit_err("bind()");
+    }
+
+    freeaddrinfo(servaddr);
+    servaddr = NULL;
+
+    z = listen(s0, 5);
+    if (z != 0) {
+        exit_err("listen()");
+    }
+    printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
+
+    FD_ZERO(&readfds);
+    FD_SET(s0, &readfds);
+    int maxreadfd = s0;
+
+    FD_ZERO(&writefds);
+    int maxwritefd = -1;
+
+    while (1) {
+        // readfds contain the master list of read sockets
+        fd_set fds = readfds;
+        z = select(maxreadfd+1, &fds, NULL, NULL, NULL);
+        if (z == -1) {
+            exit_err("select()");
+        }
+        if (z == 0) {
+            // timeout returned
+            continue;
+        }
+
+        // fds now contain list of clients with data available to be read.
+        for (int i=0; i <= maxreadfd; i++) {
+            if (!FD_ISSET(i, &fds)) {
+                continue;
+            }
+
+            // New client connection
+            if (i == s0) {
+                struct sockaddr_in a;
+                socklen_t a_len = sizeof(a);
+                int newclientsock = accept(s0, (struct sockaddr*)&a, &a_len);
+                if (newclientsock == -1) {
+                    print_err("accept()");
+                    continue;
+                }
+
+                // Add new client socket to list of read sockets.
+                FD_SET(newclientsock, &readfds);
+                if (newclientsock > maxreadfd) {
+                    maxreadfd = newclientsock;
+                }
+
+                printf("New client fd: %d\n", newclientsock);
+                clientctx_t *ctx = clientctx_new(newclientsock);
+                append_clientctx_list(&ctxhead, ctx);
+                continue;
+            }
+
+            // i contains client socket with data available to be read.
+            int clientfd = i;
+            read_request_from_client(clientfd);
+
+            //FD_CLR(clientfd, &readfds);
+            //close(clientfd);
+        }
+
+        // writefds contain the master list of read sockets
+        fds = writefds;
+        z = select(maxwritefd+1, NULL, &fds, NULL, NULL);
+        if (z == -1) {
+            exit_err("select()");
+        }
+        if (z == 0) {
+            // timeout returned
+            continue;
+        }
+
+        // fds now contain list of clients ready to be written to.
+        for (int i=0; i <= maxwritefd; i++) {
+            if (!FD_ISSET(i, &fds)) {
+                continue;
+            }
+
+            // i contains client socket ready to be written to.
+            int clientfd = i;
+            send_response_to_client(clientfd);
+        }
+    } // while (1)
+
+    // Code doesn't reach here.
+    close(s0);
+    return 0;
+}
+
+clientctx_t *clientctx_new(int sock) {
+    clientctx_t *ctx = malloc(sizeof(clientctx_t));
+    ctx->sock = sock;
+    ctx->sb = sockbuf_new(sock, 0);
+    ctx->req = httpreq_new();
+    ctx->partial_line = NULL;
+    ctx->nlinesread = 0;
+    ctx->empty_line_parsed = 0;
+    ctx->respbuf = buf_new(0);
+    ctx->respbuf_bytes_sent = 0;
+    ctx->next = NULL;
+    return ctx;
+}
+
+// Append ctx to end of linked list. Skip if ctx already in list.
+void append_clientctx_list(clientctx_t **pphead, clientctx_t *ctx) {
+    assert(pphead != NULL);
+
+    if (*pphead == NULL) {
+        // first client
+        *pphead = ctx;
+    } else {
+        // add client to end of clients list
+        clientctx_t *p = *pphead;
+        while (p->next != NULL) {
+            p = p->next;
+        }
+        p->next = ctx;
+    }
+}
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {
@@ -116,146 +294,13 @@ void handle_sigchld(int sig) {
     errno = tmp_errno;
 }
 
-fd_set readfds;
-fd_set writefds;
-
-int main(int argc, char *argv[]) {
-    int z;
-
-    signal(SIGINT, handle_sigint);
-    signal(SIGCHLD, handle_sigchld);
-
-    // Get this server's address.
-    struct addrinfo hints, *servaddr;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    z = getaddrinfo("localhost", LISTEN_PORT, &hints, &servaddr);
-    if (z != 0) {
-        exit_err("getaddrinfo()");
-    }
-
-    // Get human readable IP address string in servipstr.
-    char servipstr[INET6_ADDRSTRLEN];
-    const char *pz = inet_ntop(servaddr->ai_family, addrinfo_sin_addr(servaddr), servipstr, sizeof(servipstr));
-    if (pz ==NULL) {
-        exit_err("inet_ntop()");
-    }
-
-    int s0 = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
-    if (s0 == -1) {
-        exit_err("socket()");
-    }
-
-    int yes=1;
-    z = setsockopt(s0, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-    if (s0 == -1) {
-        exit_err("setsockopt(SO_REUSEADDR)");
-    }
-
-    z = bind(s0, servaddr->ai_addr, servaddr->ai_addrlen);
-    if (z != 0) {
-        exit_err("bind()");
-    }
-
-    freeaddrinfo(servaddr);
-    servaddr = NULL;
-
-    z = listen(s0, 5);
-    if (z != 0) {
-        exit_err("listen()");
-    }
-    printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
-
-    FD_ZERO(&readfds);
-    FD_SET(s0, &readfds);
-    int maxfd = s0;
-
-    FD_ZERO(&writefds);
-
-    while (1) {
-        // readfds contain the master list of read sockets
-        fd_set fds = readfds;
-        z = select(maxfd+1, &fds, NULL, NULL, NULL);
-        if (z == -1) {
-            exit_err("select()");
-        }
-        if (z == 0) {
-            // timeout returned
-            continue;
-        }
-
-        // fds now contain list of clients with data available to be read.
-        for (int i=0; i <= maxfd; i++) {
-            if (!FD_ISSET(i, &fds)) {
-                continue;
-            }
-
-            // New client connection
-            if (i == s0) {
-                struct sockaddr_in a;
-                socklen_t a_len = sizeof(a);
-                int newclientsock = accept(s0, (struct sockaddr*)&a, &a_len);
-                if (newclientsock == -1) {
-                    print_err("accept()");
-                    continue;
-                }
-
-                // Add new client socket to list of read sockets.
-                FD_SET(newclientsock, &readfds);
-                if (newclientsock > maxfd) {
-                    maxfd = newclientsock;
-                }
-
-                printf("New client fd: %d\n", newclientsock);
-                clientctx_t *ctx = malloc(sizeof(clientctx_t));
-                ctx->sock = newclientsock;
-                ctx->sb = sockbuf_new(newclientsock, 0);
-                ctx->req = httpreq_new();
-                ctx->partial_line = NULL;
-                ctx->nlinesread = 0;
-                ctx->empty_line_parsed = 0;
-                ctx->respbuf = buf_new(0);
-                ctx->respbuf_bytes_sent = 0;
-                ctx->next = NULL;
-
-                if (ctxhead == NULL) {
-                    // first client
-                    ctxhead = ctx;
-                } else {
-                    // add client to end of clients list
-                    clientctx_t* p = ctxhead;
-                    while (p->next != NULL) {
-                        p = p->next;
-                    }
-                    p->next = ctx;
-                }
-
-                continue;
-            }
-
-            // i contains client socket with data available to be read.
-            int clientfd = i;
-            handle_client(clientfd);
-
-            //FD_CLR(clientfd, &readfds);
-            //close(clientfd);
-        }
-    }
-
-    // Code doesn't reach here.
-    close(s0);
-    return 0;
-}
-
-void handle_client(int clientfd) {
+void read_request_from_client(int clientfd) {
     clientctx_t *ctx = ctxhead;
     while (ctx != NULL && ctx->sock != clientfd) {
         ctx = ctx->next;
     }
     if (ctx == NULL) {
-        printf("handle_client() clientfd %d not in clients list\n", clientfd);
+        printf("read_request_from_client() clientfd %d not in clients list\n", clientfd);
         return;
     }
     assert(ctx->sock == clientfd);
@@ -387,9 +432,6 @@ void close_client(clientctx_t *ctx) {
     free(ctx);
 }
 
-void send_response(int clientsock, httpresp_t *resp) {
-}
-
 int is_supported_http_method(char *method) {
     if (method == NULL) {
         return 0;
@@ -401,5 +443,19 @@ int is_supported_http_method(char *method) {
     }
 
     return 0;
+}
+
+void send_response_to_client(int clientfd) {
+    clientctx_t *ctx = ctxhead;
+    while (ctx != NULL && ctx->sock != clientfd) {
+        ctx = ctx->next;
+    }
+    if (ctx == NULL) {
+        printf("send_response_to_client() clientfd %d not in clients list\n", clientfd);
+        return;
+    }
+    assert(ctx->sock == clientfd);
+    assert(ctx->sb->sock == clientfd);
+
 }
 
