@@ -43,7 +43,8 @@ typedef struct clientctx {
 } clientctx_t;
 
 clientctx_t *clientctx_new(int sock);
-void append_clientctx_list(clientctx_t **pphead, clientctx_t *ctx);
+void add_clientctx(clientctx_t **pphead, clientctx_t *ctx);
+void remove_clientctx(clientctx_t **pphead, int sock);
 
 void print_err(char *s);
 void exit_err(char *s);
@@ -125,9 +126,7 @@ int main(int argc, char *argv[]) {
         fd_set cur_readfds = readfds;
         fd_set cur_writefds = writefds;
         z = select(maxfd+1, &cur_readfds, &cur_writefds, NULL, NULL);
-        printf("z = select() z: %d\n", z);
         if (z == -1) {
-            printf("error select()\n");
             exit_err("select()");
         }
         if (z == 0) {
@@ -138,7 +137,6 @@ int main(int argc, char *argv[]) {
         // fds now contain list of clients with data available to be read.
         for (int i=0; i <= maxfd; i++) {
             if (FD_ISSET(i, &cur_readfds)) {
-                printf("read fd %d\n", i);
                 // New client connection
                 if (i == s0) {
                     struct sockaddr_in a;
@@ -155,9 +153,9 @@ int main(int argc, char *argv[]) {
                         maxfd = newclientsock;
                     }
 
-                    printf("New client fd: %d\n", newclientsock);
+                    printf("read fd: %d\n", newclientsock);
                     clientctx_t *ctx = clientctx_new(newclientsock);
-                    append_clientctx_list(&ctxhead, ctx);
+                    add_clientctx(&ctxhead, ctx);
                     continue;
                 } else {
                     // i contains client socket with data available to be read.
@@ -169,7 +167,6 @@ int main(int argc, char *argv[]) {
                 // i contains client socket ready to be written to.
                 int clientfd = i;
                 send_response_to_client(clientfd);
-                printf("end write fd\n");
             }
         }
     } // while (1)
@@ -195,8 +192,8 @@ clientctx_t *clientctx_new(int sock) {
     return ctx;
 }
 
-// Append ctx to end of linked list. Skip if ctx already in list.
-void append_clientctx_list(clientctx_t **pphead, clientctx_t *ctx) {
+// Add ctx to end of clientctx linked list. Skip if ctx sock already in list.
+void add_clientctx(clientctx_t **pphead, clientctx_t *ctx) {
     assert(pphead != NULL);
 
     if (*pphead == NULL) {
@@ -206,9 +203,43 @@ void append_clientctx_list(clientctx_t **pphead, clientctx_t *ctx) {
         // add client to end of clients list
         clientctx_t *p = *pphead;
         while (p->next != NULL) {
+            // ctx sock already exists
+            if (p->sock == ctx->sock) {
+                return;
+            }
             p = p->next;
         }
         p->next = ctx;
+    }
+}
+
+// Remove ctx sock from clientctx linked list.
+void remove_clientctx(clientctx_t **pphead, int sock) {
+    assert(pphead != NULL);
+
+    if (*pphead == NULL) {
+        return;
+    }
+    // remove head ctx
+    if ((*pphead)->sock == sock) {
+        clientctx_t *tmp = *pphead;
+        *pphead = (*pphead)->next;
+        free(tmp);
+        return;
+    }
+
+    clientctx_t *p = *pphead;
+    clientctx_t *prev = NULL;
+    while (p != NULL) {
+        if (p->sock == sock) {
+            assert(prev != NULL);
+            prev->next = p->next;
+            free(p);
+            return;
+        }
+
+        prev = p;
+        p = p->next;
     }
 }
 
@@ -297,57 +328,53 @@ void read_request_from_client(int clientfd) {
     assert(ctx->sock == clientfd);
     assert(ctx->sb->sock == clientfd);
 
-    char buf[1000];
-    int z = sockbuf_readline(ctx->sb, buf, sizeof buf);
-    if (z == 0) {
-        if (ctx->sb->sockclosed) {
-            FD_CLR(ctx->sock, &readfds);
+    while (1) {
+        char buf[1000];
+        int z = sockbuf_readline(ctx->sb, buf, sizeof buf);
+        if (z == 0) {
+            if (ctx->sb->sockclosed) {
+                FD_CLR(ctx->sock, &readfds);
+                int zz = shutdown(ctx->sock, SHUT_RD);
+                if (zz == -1) {
+                    print_err("shutdown()");
+                }
+            }
+            break;
         }
-        return;
-    }
-    if (z == -1) {
-        print_err("sockbuf_readline()");
-        return;
-    }
-    assert(buf[z] == '\0');
-
-    // If there's a previous partial line, combine it with current line.
-    if (ctx->partial_line != NULL) {
-        ctx->partial_line = append_string(ctx->partial_line, buf);
-        if (ends_with_newline(ctx->partial_line)) {
-            process_line(ctx, ctx->partial_line);
-
-            free(ctx->partial_line);
-            ctx->partial_line = NULL;
+        if (z == -1) {
+            print_err("sockbuf_readline()");
+            break;
         }
-        return;
+        assert(buf[z] == '\0');
+
+        // If there's a previous partial line, combine it with current line.
+        if (ctx->partial_line != NULL) {
+            ctx->partial_line = append_string(ctx->partial_line, buf);
+            if (ends_with_newline(ctx->partial_line)) {
+                process_line(ctx, ctx->partial_line);
+
+                free(ctx->partial_line);
+                ctx->partial_line = NULL;
+            }
+            continue;
+        }
+
+        // If current line is only partial line (not newline terminated), remember it for
+        // next read.
+        if (!ends_with_newline(buf)) {
+            ctx->partial_line = strdup(buf);
+            continue;
+        }
+
+        // Current line is complete.
+        process_line(ctx, buf);
     }
-
-    // If current line is only partial line (not newline terminated), remember it for
-    // next read.
-    if (!ends_with_newline(buf)) {
-        ctx->partial_line = strdup(buf);
-        return;
-    }
-
-    // Current line is complete.
-    process_line(ctx, buf);
-    return;
-
 }
 
 void process_line(clientctx_t *ctx, char *line) {
     if (ctx->nlinesread == 0) {
         httpreq_parse_request_line(ctx->req, line);
         ctx->nlinesread++;
-
-        if (ctx->req->method && !strcasecmp(ctx->req->method, "GET")) {
-            printf("--- GET received ---\n");
-            httpreq_debugprint(ctx->req);
-            printf("-----------------------------\n");
-
-            process_client_request(ctx);
-        }
         return;
     }
 
@@ -355,11 +382,13 @@ void process_line(clientctx_t *ctx, char *line) {
         ctx->empty_line_parsed = 1;
         ctx->nlinesread++;
 
-        printf("--- HTTP REQUEST received ---\n");
-        httpreq_debugprint(ctx->req);
-        printf("-----------------------------\n");
+        httpreq_t *req = ctx->req;
+        printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
+            req->method, req->uri, 200);
 
-        process_client_request(ctx);
+        if (ctx->resphead->bytes_len == 0) {
+            process_client_request(ctx);
+        }
         return;
     }
 
@@ -501,8 +530,6 @@ int is_supported_http_method(char *method) {
 }
 
 void send_response_to_client(int clientfd) {
-    printf("start send_response_to_client(%d)\n", clientfd);
-
     clientctx_t *ctx = ctxhead;
     while (ctx != NULL && ctx->sock != clientfd) {
         ctx = ctx->next;
@@ -518,34 +545,45 @@ void send_response_to_client(int clientfd) {
     // response header (resphead) gets sent first,
     // followed by response body (respbody).
     if (ctx->resphead_bytes_sent < ctx->resphead->bytes_len) {
-        printf("1\n");
         // send resphead
-        int nbytes_sent = sock_send(ctx->sock,
+        int z = sock_send(ctx->sock,
             ctx->resphead->bytes + ctx->resphead_bytes_sent,
             ctx->resphead->bytes_len - ctx->resphead_bytes_sent);
-        if (nbytes_sent == -1) {
+        if (z == -1) {
             return;
         }
-        ctx->resphead_bytes_sent += nbytes_sent;
-        printf("1 end\n");
+        if (z == -2) {
+            FD_CLR(ctx->sock, &writefds);
+            remove_clientctx(&ctxhead, ctx->sock);
+            return;
+        }
+        ctx->resphead_bytes_sent += z;
     } else if (ctx->respbody_bytes_sent < ctx->respbody->bytes_len) {
-        printf("2\n");
         // send respbody
-        int nbytes_sent = sock_send(ctx->sock,
+        int z = sock_send(ctx->sock,
             ctx->respbody->bytes + ctx->respbody_bytes_sent,
             ctx->respbody->bytes_len - ctx->respbody_bytes_sent);
-        printf("nbytes_sent: %d\n", nbytes_sent);
-        if (nbytes_sent == -1) {
+        if (z == -1) {
             return;
         }
-        ctx->respbody_bytes_sent += nbytes_sent;
-        printf("2 end\n");
+        if (z == -2) {
+            FD_CLR(ctx->sock, &writefds);
+            remove_clientctx(&ctxhead, ctx->sock);
+            return;
+        }
+        ctx->respbody_bytes_sent += z;
     } else {
-        printf("3\n");
+        FD_CLR(ctx->sock, &readfds);
         FD_CLR(ctx->sock, &writefds);
-        //shutdown(ctx->sock, SHUT_WR);
+        int z= shutdown(ctx->sock, SHUT_RDWR);
+        if (z == -1) {
+            print_err("shutdown()");
+        }
+        z = close(ctx->sock);
+        if (z == -1) {
+            print_err("close()");
+        }
+        remove_clientctx(&ctxhead, ctx->sock);
     }
-
-    printf("end send_response_to_client(%d)\n", clientfd);
 }
 

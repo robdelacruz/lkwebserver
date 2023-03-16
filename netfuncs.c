@@ -62,18 +62,16 @@ ssize_t sock_recv(int sock, char *buf, size_t count) {
 }
 
 // Send count buf bytes into sock.
-// Returns num bytes sent or -1 for error.
+// Returns num bytes sent or -1 for error, -2 for socket closed
 ssize_t sock_send(int sock, char *buf, size_t count) {
-    printf("sock_send() count: %ld\n", count);
     int nsent = 0;
     while (nsent < count) {
-        printf("sock_send() count: %ld nsent: %d count-nsent: %ld\n", count, nsent, count-nsent);
         int z = send(sock, buf+nsent, count-nsent, MSG_DONTWAIT);
-        printf("sock_send() z: %d\n", z);
         // socket closed, no more data
         if (z == 0) {
-            //$$ Need to return indication that socket is closed
-            break;
+            // socket closed
+            //$$ Better way to return 'socket closed' status?
+            return -2;
         }
         // interrupt occured during send, retry send.
         if (z == -1 && errno == EINTR) {
@@ -144,10 +142,6 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
         if (sb->next_read_pos >= sb->buf_len) {
             memset(sb->buf, '*', sb->buf_size); // initialize for debugging purposes.
             int z = recv(sb->sock, sb->buf, sb->buf_size, MSG_DONTWAIT);
-
-//            printf("sockbuf_readline() z: %d\n", z);
-//            sockbuf_debugprint(sb);
-
             // socket closed, no more data
             if (z == 0) {
                 sb->sockclosed = 1;
@@ -173,7 +167,6 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
 
         // Copy unread buffer bytes into dst until a '\n' char.
         while (nread < dst_len-1) {
-            //printf("sockbuf_readline() nread: %d, dst_len: %ld\n", nread, dst_len);
             if (sb->next_read_pos >= sb->buf_len) {
                 break;
             }
@@ -252,7 +245,7 @@ void stringmap_set(stringmap_t *sm, char *k, char *v) {
 buf_t *buf_new(size_t bytes_size) {
     if (bytes_size == 0) {
 //        buf_size = 1024;
-        bytes_size = 0;
+        bytes_size = 1;
     }
 
     buf_t *buf = malloc(sizeof(buf_t));
@@ -281,6 +274,8 @@ int buf_append(buf_t *buf, char *bytes, size_t len) {
     }
     memcpy(buf->bytes + buf->bytes_len, bytes, len);
     buf->bytes_len += len;
+
+    assert(buf->bytes != NULL);
     return 0;
 }
 

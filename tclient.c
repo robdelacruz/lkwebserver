@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
     printf("Connected to %s:%s\n", server_domain, server_port);
 
     char *chunks[] = {
-        "GET2 /www/index.html HTTP/1.0\r\n", 
+        "GET /www/index.html HTTP/1.0\r\n", 
         "From: rob@rob", 
         "delacruz.xyz\r\n", 
         "User-Agent: tclient/1.0\r\n", 
@@ -73,7 +73,9 @@ int main(int argc, char *argv[]) {
     char respchunk[1024];
 
     for (int i=0; i < sizeof(chunks) / sizeof(char *); i++) {
+        printf("calling send()\n");
         z = send(sock, chunks[i], strlen(chunks[i]), 0);
+        printf("send() z: %d\n", z);
         if (z == -1) {
             exit_err("send()");
         }
@@ -85,6 +87,7 @@ int main(int argc, char *argv[]) {
     printf("Response:\n");
     while(1) {
         z = recv(sock, respchunk, 1024-1, 0);
+        printf("recv() z: %d\n", z);
         if (z <= 0) {
             break;
         }
