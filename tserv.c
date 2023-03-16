@@ -125,7 +125,9 @@ int main(int argc, char *argv[]) {
         fd_set cur_readfds = readfds;
         fd_set cur_writefds = writefds;
         z = select(maxfd+1, &cur_readfds, &cur_writefds, NULL, NULL);
+        printf("z = select() z: %d\n", z);
         if (z == -1) {
+            printf("error select()\n");
             exit_err("select()");
         }
         if (z == 0) {
@@ -136,6 +138,7 @@ int main(int argc, char *argv[]) {
         // fds now contain list of clients with data available to be read.
         for (int i=0; i <= maxfd; i++) {
             if (FD_ISSET(i, &cur_readfds)) {
+                printf("read fd %d\n", i);
                 // New client connection
                 if (i == s0) {
                     struct sockaddr_in a;
@@ -162,9 +165,11 @@ int main(int argc, char *argv[]) {
                     read_request_from_client(clientfd);
                 }
             } else if (FD_ISSET(i, &cur_writefds)) {
+                printf("write fd %d\n", i);
                 // i contains client socket ready to be written to.
                 int clientfd = i;
                 send_response_to_client(clientfd);
+                printf("end write fd\n");
             }
         }
     } // while (1)
@@ -295,6 +300,9 @@ void read_request_from_client(int clientfd) {
     char buf[1000];
     int z = sockbuf_readline(ctx->sb, buf, sizeof buf);
     if (z == 0) {
+        if (ctx->sb->sockclosed) {
+            FD_CLR(ctx->sock, &readfds);
+        }
         return;
     }
     if (z == -1) {
@@ -332,6 +340,14 @@ void process_line(clientctx_t *ctx, char *line) {
     if (ctx->nlinesread == 0) {
         httpreq_parse_request_line(ctx->req, line);
         ctx->nlinesread++;
+
+        if (ctx->req->method && !strcasecmp(ctx->req->method, "GET")) {
+            printf("--- GET received ---\n");
+            httpreq_debugprint(ctx->req);
+            printf("-----------------------------\n");
+
+            process_client_request(ctx);
+        }
         return;
     }
 
@@ -343,8 +359,6 @@ void process_line(clientctx_t *ctx, char *line) {
         httpreq_debugprint(ctx->req);
         printf("-----------------------------\n");
 
-        //FD_CLR(ctx->sock, &readfds);
-        //shutdown(ctx->sock, SHUT_RD);
         process_client_request(ctx);
         return;
     }
@@ -368,8 +382,16 @@ void process_client_request(clientctx_t *ctx) {
     static char *html_error_end =
        "</body></html>\n";
 
+    static char *html_sample =
+       "<!DOCTYPE html>\n"
+       "<html>\n"
+       "<head><title>Little Kitten</title></head>\n"
+       "<body><h1>Little Kitten webserver</h1>\n"
+       "<p>Hello Little Kitten!</p>\n"
+       "</body></html>\n";
+
     char line[RESPONSE_LINE_MAXSIZE];
-    int line_len;
+    //int line_len;
     char *method = ctx->req->method ? ctx->req->method : "";
 
     // Invalid request method: 501 Unknown method ('GET2')
@@ -400,6 +422,26 @@ void process_client_request(clientctx_t *ctx) {
         return;
     }
 
+    if (!strcmp(method, "GET")) {
+        // Compose respbody buffer
+        buf_append(ctx->respbody, html_sample, strlen(html_sample));
+
+        // Compose resphead buffer
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "HTTP/1.0 200 OK\n");
+        buf_append(ctx->resphead, line, strlen(line));
+
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "Server: LittleKitten/0.1\n");
+        buf_append(ctx->resphead, line, strlen(line));
+
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Type: text/html\n");
+        buf_append(ctx->resphead, line, strlen(line));
+
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Length: %ld\n", ctx->respbody->bytes_len);
+        buf_append(ctx->resphead, line, strlen(line));
+        buf_append(ctx->resphead, "\r\n", 2);
+
+        FD_SET(ctx->sock, &writefds);
+    }
 }
 
 int is_valid_http_method(char *method) {
@@ -459,6 +501,8 @@ int is_supported_http_method(char *method) {
 }
 
 void send_response_to_client(int clientfd) {
+    printf("start send_response_to_client(%d)\n", clientfd);
+
     clientctx_t *ctx = ctxhead;
     while (ctx != NULL && ctx->sock != clientfd) {
         ctx = ctx->next;
@@ -474,6 +518,7 @@ void send_response_to_client(int clientfd) {
     // response header (resphead) gets sent first,
     // followed by response body (respbody).
     if (ctx->resphead_bytes_sent < ctx->resphead->bytes_len) {
+        printf("1\n");
         // send resphead
         int nbytes_sent = sock_send(ctx->sock,
             ctx->resphead->bytes + ctx->resphead_bytes_sent,
@@ -482,20 +527,25 @@ void send_response_to_client(int clientfd) {
             return;
         }
         ctx->resphead_bytes_sent += nbytes_sent;
+        printf("1 end\n");
     } else if (ctx->respbody_bytes_sent < ctx->respbody->bytes_len) {
+        printf("2\n");
         // send respbody
         int nbytes_sent = sock_send(ctx->sock,
             ctx->respbody->bytes + ctx->respbody_bytes_sent,
             ctx->respbody->bytes_len - ctx->respbody_bytes_sent);
+        printf("nbytes_sent: %d\n", nbytes_sent);
         if (nbytes_sent == -1) {
             return;
         }
         ctx->respbody_bytes_sent += nbytes_sent;
+        printf("2 end\n");
     } else {
-        //printf("FD_CLR ctx->sock: %d\n", ctx->sock);
-        //FD_CLR(ctx->sock, &writefds);
+        printf("3\n");
+        FD_CLR(ctx->sock, &writefds);
         //shutdown(ctx->sock, SHUT_WR);
     }
 
+    printf("end send_response_to_client(%d)\n", clientfd);
 }
 

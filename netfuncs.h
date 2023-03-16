@@ -77,6 +77,10 @@ void sockbuf_free(sockbuf_t *sb);
 // Read CR terminated line from socket using buffered input.
 ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len);
 
+// print state of sockbuf/buf
+void sockbuf_debugprint(sockbuf_t *sb);
+void debugprint_buf(char *buf, size_t buf_size);
+
 
 /** httpreq functions **/
 httpreq_t *httpreq_new();
