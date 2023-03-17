@@ -87,7 +87,11 @@ int main(int argc, char *argv[]) {
     respmsg[z] = '\0';
     printf("%s", respmsg);
 
-    close(sock);
+    z = close(sock);
+    if (z == -1) {
+        exit_err("close()");
+    }
+
     return 0;
 }
 
