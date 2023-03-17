@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
@@ -426,5 +427,37 @@ void httpresp_free(httpresp_t *resp) {
     resp->headers = NULL;
     resp->body = NULL;
     free(resp);
+}
+
+#define RESP_LINE_MAXSIZE 2048
+
+// add line to buf, with error checking
+void snprintf_to_buf(buf_t *buf, const char *fmt, ...) {
+    char line[RESP_LINE_MAXSIZE];
+
+    va_list args;
+    va_start(args, fmt);
+    int z = vsnprintf(line, sizeof(line), fmt, args);
+    va_end(args);
+
+    // error in snprintf()
+    if (z < 0) return;
+
+    // if snprintf() truncated the output, fill in the terminating chars.
+    if (z > sizeof(line)) {
+        z = sizeof(line);
+        line[z-2] = '\n';
+        line[z-1] = '\0';
+    }
+
+    buf_append(buf, line, strlen(line));
+}
+
+void httpresp_head_to_buf(httpresp_t *resp, buf_t *buf) {
+    snprintf_to_buf(buf, "%s %d %s\n", resp->version, resp->status, resp->statustext);
+    snprintf_to_buf(buf, "Content-Type: text/html\n");
+    snprintf_to_buf(buf, "Content-Length: %ld\n", resp->body->bytes_len);
+
+    buf_append(buf, "\r\n", 2);
 }
 

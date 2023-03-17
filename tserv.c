@@ -29,20 +29,21 @@ typedef struct clientctx {
     int nlinesread;             // number of lines read so far
     int empty_line_parsed;      // flag indicating whether empty line received
 
+    httpresp_t *resp;
+
     // buffer containing response head including blank line
     // with number of response head bytes sent so far
     buf_t *resphead;
     size_t resphead_bytes_sent;
 
-    // buffer containing response body
-    // with number of body bytes sent so far
-    buf_t *respbody;
+    // number of resp body bytes sent so far
     size_t respbody_bytes_sent;
 
     struct clientctx *next;     // linked list to next client
 } clientctx_t;
 
 clientctx_t *clientctx_new(int sock);
+void clientctx_free(clientctx_t *ctx);
 void add_clientctx(clientctx_t **pphead, clientctx_t *ctx);
 void remove_clientctx(clientctx_t **pphead, int sock);
 
@@ -184,12 +185,30 @@ clientctx_t *clientctx_new(int sock) {
     ctx->partial_line = NULL;
     ctx->nlinesread = 0;
     ctx->empty_line_parsed = 0;
+
+    ctx->resp = httpresp_new();
     ctx->resphead = buf_new(0);
+
     ctx->resphead_bytes_sent = 0;
-    ctx->respbody = buf_new(0);
     ctx->respbody_bytes_sent = 0;
     ctx->next = NULL;
     return ctx;
+}
+
+void clientctx_free(clientctx_t *ctx) {
+    sockbuf_free(ctx->sb);
+    httpreq_free(ctx->req);
+    httpresp_free(ctx->resp);
+
+    if (ctx->partial_line) {
+        free(ctx->partial_line);
+    }
+
+    ctx->sb = NULL;
+    ctx->req = NULL;
+    ctx->resp = NULL;
+    ctx->partial_line = NULL;
+    free(ctx);
 }
 
 // Add ctx to end of clientctx linked list. Skip if ctx sock already in list.
@@ -224,7 +243,7 @@ void remove_clientctx(clientctx_t **pphead, int sock) {
     if ((*pphead)->sock == sock) {
         clientctx_t *tmp = *pphead;
         *pphead = (*pphead)->next;
-        free(tmp);
+        clientctx_free(tmp);
         return;
     }
 
@@ -234,7 +253,7 @@ void remove_clientctx(clientctx_t **pphead, int sock) {
         if (p->sock == sock) {
             assert(prev != NULL);
             prev->next = p->next;
-            free(p);
+            clientctx_free(p);
             return;
         }
 
@@ -418,49 +437,31 @@ void process_client_request(clientctx_t *ctx) {
 
     // Invalid request method: 501 Unknown method ('GET2')
     if (!is_valid_http_method(method)) {
+        ctx->resp->status = 501;
+        ctx->resp->statustext = strdup("Unsupported method ('method here')");
+        ctx->resp->version = strdup("HTTP/1.0");
+
         // Compose respbody buffer
-        buf_append(ctx->respbody, html_error_start, strlen(html_error_start));
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Error code: 501</p>\n");
-        buf_append(ctx->respbody, line, strlen(line));
+        buf_append(ctx->resp->body, html_error_start, strlen(html_error_start));
+        snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Error code: %d</p>\n", ctx->resp->status);
+        buf_append(ctx->resp->body, line, strlen(line));
         snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Message: Unsupported method ('%s').</p>\n", method);
-        buf_append(ctx->respbody, line, strlen(line));
-        buf_append(ctx->respbody, html_error_end, strlen(html_error_end));
+        buf_append(ctx->resp->body, line, strlen(line));
+        buf_append(ctx->resp->body, html_error_end, strlen(html_error_end));
 
-        // Compose resphead buffer
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "HTTP/1.0 501 Unsupported method ('%s')\n", method);
-        buf_append(ctx->resphead, line, strlen(line));
-
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "Server: LittleKitten/0.1\n");
-        buf_append(ctx->resphead, line, strlen(line));
-
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Type: text/html\n");
-        buf_append(ctx->resphead, line, strlen(line));
-
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Length: %ld\n", ctx->respbody->bytes_len);
-        buf_append(ctx->resphead, line, strlen(line));
-        buf_append(ctx->resphead, "\r\n", 2);
+        httpresp_head_to_buf(ctx->resp, ctx->resphead);
 
         FD_SET(ctx->sock, &writefds);
         return;
     }
 
     if (!strcmp(method, "GET")) {
-        // Compose respbody buffer
-        buf_append(ctx->respbody, html_sample, strlen(html_sample));
+        ctx->resp->status = 200;
+        ctx->resp->statustext = strdup("OK");
+        ctx->resp->version = strdup("HTTP/1.0");
+        buf_append(ctx->resp->body, html_sample, strlen(html_sample));
 
-        // Compose resphead buffer
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "HTTP/1.0 200 OK\n");
-        buf_append(ctx->resphead, line, strlen(line));
-
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "Server: LittleKitten/0.1\n");
-        buf_append(ctx->resphead, line, strlen(line));
-
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Type: text/html\n");
-        buf_append(ctx->resphead, line, strlen(line));
-
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "Content-Length: %ld\n", ctx->respbody->bytes_len);
-        buf_append(ctx->resphead, line, strlen(line));
-        buf_append(ctx->resphead, "\r\n", 2);
+        httpresp_head_to_buf(ctx->resp, ctx->resphead);
 
         FD_SET(ctx->sock, &writefds);
     }
@@ -551,11 +552,11 @@ void send_response_to_client(int clientfd) {
             return;
         }
         ctx->resphead_bytes_sent += z;
-    } else if (ctx->respbody_bytes_sent < ctx->respbody->bytes_len) {
+    } else if (ctx->respbody_bytes_sent < ctx->resp->body->bytes_len) {
         // send respbody
         int z = sock_send(ctx->sock,
-            ctx->respbody->bytes + ctx->respbody_bytes_sent,
-            ctx->respbody->bytes_len - ctx->respbody_bytes_sent);
+            ctx->resp->body->bytes + ctx->respbody_bytes_sent,
+            ctx->resp->body->bytes_len - ctx->respbody_bytes_sent);
         if (z == -1) {
             return;
         }

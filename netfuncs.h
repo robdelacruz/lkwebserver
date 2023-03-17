@@ -105,5 +105,7 @@ void httpreq_debugprint(httpreq_t *req);
 /** httpresp functions **/
 httpresp_t *httpresp_new();
 void httpresp_free(httpresp_t *resp);
+
+void httpresp_head_to_buf(httpresp_t *resp, buf_t *buf);
 #endif
 
