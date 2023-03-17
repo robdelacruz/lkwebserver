@@ -332,13 +332,6 @@ void read_request_from_client(int clientfd) {
         char buf[1000];
         int z = sockbuf_readline(ctx->sb, buf, sizeof buf);
         if (z == 0) {
-            if (ctx->sb->sockclosed) {
-                FD_CLR(ctx->sock, &readfds);
-                int zz = shutdown(ctx->sock, SHUT_RD);
-                if (zz == -1) {
-                    print_err("shutdown()");
-                }
-            }
             break;
         }
         if (z == -1) {
