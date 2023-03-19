@@ -50,7 +50,7 @@ void handle_sigchld(int sig);
 
 void read_request_from_client(int clientfd);
 void process_line(clientctx_t *ctx, char *line);
-void process_client_request(clientctx_t *ctx);
+httpresp_t *process_req(httpreq_t *req);
 int is_valid_http_method(char *method);
 
 void send_response_to_client(int clientfd);
@@ -174,7 +174,7 @@ clientctx_t *clientctx_new(int sock) {
     ctx->sock = sock;
     ctx->sb = sockbuf_new(sock, 0);
     ctx->req = httpreq_new();
-    ctx->resp = httpresp_new();
+    ctx->resp = NULL;
     ctx->partial_line = NULL;
     ctx->nlinesread = 0;
     ctx->empty_line_parsed = 0;
@@ -185,10 +185,8 @@ clientctx_t *clientctx_new(int sock) {
 void clientctx_free(clientctx_t *ctx) {
     sockbuf_free(ctx->sb);
     httpreq_free(ctx->req);
-    httpresp_free(ctx->resp);
-    if (ctx->partial_line) {
-        free(ctx->partial_line);
-    }
+    if (ctx->resp) httpresp_free(ctx->resp);
+    if (ctx->partial_line) free(ctx->partial_line);
 
     ctx->sb = NULL;
     ctx->req = NULL;
@@ -384,8 +382,9 @@ void process_line(clientctx_t *ctx, char *line) {
         printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
             req->method, req->uri, 200);
 
-        if (ctx->resp->head->bytes_len == 0) {
-            process_client_request(ctx);
+        ctx->resp = process_req(ctx->req);
+        if (ctx->resp) {
+            FD_SET(ctx->sock, &writefds);
         }
         return;
     }
@@ -396,11 +395,13 @@ void process_line(clientctx_t *ctx, char *line) {
         return;
     }
 
+    //$$ receive req Content-Length bytes into body
     httpreq_append_body(ctx->req, line, strlen(line));
     ctx->nlinesread++;
 }
 
-void process_client_request(clientctx_t *ctx) {
+// Generate an http response to an http request.
+httpresp_t *process_req(httpreq_t *req) {
     static char *html_error_start = 
        "<!DOCTYPE html>\n"
        "<html>\n"
@@ -417,40 +418,30 @@ void process_client_request(clientctx_t *ctx) {
        "<p>Hello Little Kitten!</p>\n"
        "</body></html>\n";
 
-    char line[RESPONSE_LINE_MAXSIZE];
-    //int line_len;
-    char *method = ctx->req->method ? ctx->req->method : "";
+    httpresp_t *resp = httpresp_new();
 
-    // Invalid request method: 501 Unknown method ('GET2')
+    char *method = req->method ? req->method : "";
     if (!is_valid_http_method(method)) {
-        ctx->resp->status = 501;
-        ctx->resp->statustext = strdup("Unsupported method ('method here')");
-        ctx->resp->version = strdup("HTTP/1.0");
+        resp->status = 501;
+        asprintf(&resp->statustext, "Unsupported method ('%s')", method);
+        resp->version = strdup("HTTP/1.0");
 
-        // Compose resp body buffer
-        buf_append(ctx->resp->body, html_error_start, strlen(html_error_start));
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Error code: %d</p>\n", ctx->resp->status);
-        buf_append(ctx->resp->body, line, strlen(line));
-        snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Message: Unsupported method ('%s').</p>\n", method);
-        buf_append(ctx->resp->body, line, strlen(line));
-        buf_append(ctx->resp->body, html_error_end, strlen(html_error_end));
-
-        httpresp_gen_headbuf(ctx->resp);
-
-        FD_SET(ctx->sock, &writefds);
-        return;
+        buf_append(resp->body, html_error_start, strlen(html_error_start));
+        buf_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext);
+        buf_append(resp->body, html_error_end, strlen(html_error_end));
+        httpresp_gen_headbuf(resp);
+        return resp;
     }
-
     if (!strcmp(method, "GET")) {
-        ctx->resp->status = 200;
-        ctx->resp->statustext = strdup("OK");
-        ctx->resp->version = strdup("HTTP/1.0");
-        buf_append(ctx->resp->body, html_sample, strlen(html_sample));
-
-        httpresp_gen_headbuf(ctx->resp);
-
-        FD_SET(ctx->sock, &writefds);
+        resp->status = 200;
+        resp->statustext = strdup("OK");
+        resp->version = strdup("HTTP/1.0");
+        buf_append(resp->body, html_sample, strlen(html_sample));
+        httpresp_gen_headbuf(resp);
+        return resp;
     }
+
+    return NULL;
 }
 
 int is_valid_http_method(char *method) {
@@ -520,15 +511,18 @@ void send_response_to_client(int clientfd) {
     }
     assert(ctx->sock == clientfd);
     assert(ctx->sb->sock == clientfd);
+    assert(ctx->resp != NULL);
+    assert(ctx->resp->head != NULL);
+
+    httpresp_t *resp = ctx->resp;
 
     // Send as much response bytes as the client will receive.
-    // response header (resp head) gets sent first,
-    // followed by response body (resp body).
-    if (ctx->resp->head->bytes_cur < ctx->resp->head->bytes_len) {
+    // Send response head bytes first, then response body bytes.
+    if (resp->head->bytes_cur < resp->head->bytes_len) {
         // send resphead
         int z = sock_send(ctx->sock,
-            ctx->resp->head->bytes + ctx->resp->head->bytes_cur,
-            ctx->resp->head->bytes_len - ctx->resp->head->bytes_cur);
+            resp->head->bytes + resp->head->bytes_cur,
+            resp->head->bytes_len - resp->head->bytes_cur);
         if (z == -1) {
             return;
         }
@@ -537,12 +531,12 @@ void send_response_to_client(int clientfd) {
             remove_clientctx(&ctxhead, ctx->sock);
             return;
         }
-        ctx->resp->head->bytes_cur += z;
-    } else if (ctx->resp->body->bytes_cur < ctx->resp->body->bytes_len) {
+        resp->head->bytes_cur += z;
+    } else if (resp->body->bytes_cur < resp->body->bytes_len) {
         // send resp body
         int z = sock_send(ctx->sock,
-            ctx->resp->body->bytes + ctx->resp->body->bytes_cur,
-            ctx->resp->body->bytes_len - ctx->resp->body->bytes_cur);
+            resp->body->bytes + resp->body->bytes_cur,
+            resp->body->bytes_len - resp->body->bytes_cur);
         if (z == -1) {
             return;
         }
@@ -551,7 +545,7 @@ void send_response_to_client(int clientfd) {
             remove_clientctx(&ctxhead, ctx->sock);
             return;
         }
-        ctx->resp->body->bytes_cur += z;
+        resp->body->bytes_cur += z;
     } else {
         FD_CLR(ctx->sock, &readfds);
         FD_CLR(ctx->sock, &writefds);

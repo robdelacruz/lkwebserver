@@ -281,6 +281,29 @@ int buf_append(buf_t *buf, char *bytes, size_t len) {
     return 0;
 }
 
+// snprintf to buf, with error checking
+#define RESP_LINE_MAXSIZE 2048
+void buf_sprintf(buf_t *buf, const char *fmt, ...) {
+    char line[RESP_LINE_MAXSIZE];
+
+    va_list args;
+    va_start(args, fmt);
+    int z = vsnprintf(line, sizeof(line), fmt, args);
+    va_end(args);
+
+    // error in snprintf()
+    if (z < 0) return;
+
+    // if snprintf() truncated the output, fill in the terminating chars.
+    if (z > sizeof(line)) {
+        z = sizeof(line);
+        line[z-2] = '\n';
+        line[z-1] = '\0';
+    }
+
+    buf_append(buf, line, strlen(line));
+}
+
 /** httpreq functions **/
 
 httpreq_t *httpreq_new() {
@@ -436,35 +459,36 @@ void httpresp_free(httpresp_t *resp) {
     free(resp);
 }
 
-#define RESP_LINE_MAXSIZE 2048
+void httpresp_debugprint(httpresp_t *resp) {
+    printf("status: %d\n", resp->status);
+    if (resp->statustext) {
+        printf("statustext: %s\n", resp->statustext);
+    }
+    if (resp->version) {
+        printf("version: %s\n", resp->version);
+    }
+    printf("headers_size: %ld\n", resp->headers->items_size);
+    printf("headers_len: %ld\n", resp->headers->items_len);
 
-// add line to buf, with error checking
-void snprintf_to_buf(buf_t *buf, const char *fmt, ...) {
-    char line[RESP_LINE_MAXSIZE];
-
-    va_list args;
-    va_start(args, fmt);
-    int z = vsnprintf(line, sizeof(line), fmt, args);
-    va_end(args);
-
-    // error in snprintf()
-    if (z < 0) return;
-
-    // if snprintf() truncated the output, fill in the terminating chars.
-    if (z > sizeof(line)) {
-        z = sizeof(line);
-        line[z-2] = '\n';
-        line[z-1] = '\0';
+    printf("Headers:\n");
+    for (int i=0; i < resp->headers->items_len; i++) {
+        printf("%s: %s\n", resp->headers->items[i].k, resp->headers->items[i].v);
     }
 
-    buf_append(buf, line, strlen(line));
+    if (resp->body) {
+        printf("Body:\n");
+        for (int i=0; i < resp->body->bytes_len; i++) {
+            putchar(resp->body->bytes[i]);
+        }
+        printf("\n");
+    }
 }
 
-void httpresp_gen_headbuf(httpresp_t *resp) {
-    snprintf_to_buf(resp->head, "%s %d %s\n", resp->version, resp->status, resp->statustext);
-    snprintf_to_buf(resp->head, "Content-Type: text/html\n");
-    snprintf_to_buf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
 
+void httpresp_gen_headbuf(httpresp_t *resp) {
+    buf_sprintf(resp->head, "%s %d %s\n", resp->version, resp->status, resp->statustext);
+    buf_sprintf(resp->head, "Content-Type: text/html\n");
+    buf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     buf_append(resp->head, "\r\n", 2);
 }
 

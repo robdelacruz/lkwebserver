@@ -59,6 +59,7 @@ void stringmap_set(stringmap_t *sm, char *k, char *v);
 buf_t *buf_new(size_t bytes_size);
 void buf_free(buf_t *buf);
 int buf_append(buf_t *buf, char *bytes, size_t len);
+void buf_sprintf(buf_t *buf, const char *fmt, ...);
 
 /** Helper socket functions **/
 ssize_t sock_recv(int sock, char *buf, size_t count);
@@ -111,5 +112,6 @@ httpresp_t *httpresp_new();
 void httpresp_free(httpresp_t *resp);
 
 void httpresp_gen_headbuf(httpresp_t *resp);
+void httpresp_debugprint(httpresp_t *resp);
 #endif
 
