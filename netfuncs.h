@@ -26,9 +26,10 @@ typedef struct {
 
 // buf_t - Dynamic bytes buffer
 typedef struct {
-    char *bytes;
-    size_t bytes_len;
-    size_t bytes_size;
+    char *bytes;        // bytes buffer
+    size_t bytes_cur;   // index to current buffer position
+    size_t bytes_len;   // length of buffer
+    size_t bytes_size;  // capacity of buffer in bytes
 } buf_t;
 
 // httpreq_t - HTTP Request struct
@@ -37,8 +38,8 @@ typedef struct {
     char *uri;          // /path/to/index.html
     char *version;      // HTTP/1.0
     stringmap_t *headers;
+    buf_t *head;
     buf_t *body;
-
 } httpreq_t;
 
 // httpresp_t - HTTP Response struct
@@ -47,6 +48,7 @@ typedef struct {
     char *statustext;   // File not found
     char *version;      // HTTP/1.0
     stringmap_t *headers;
+    buf_t *head;
     buf_t *body;
 } httpresp_t;
 
@@ -101,11 +103,13 @@ void httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len);
 // Print contents of req.
 void httpreq_debugprint(httpreq_t *req);
 
+//void httpreq_gen_headbuf(httpreq_t *resp);
+
 
 /** httpresp functions **/
 httpresp_t *httpresp_new();
 void httpresp_free(httpresp_t *resp);
 
-void httpresp_head_to_buf(httpresp_t *resp, buf_t *buf);
+void httpresp_gen_headbuf(httpresp_t *resp);
 #endif
 

@@ -250,6 +250,7 @@ buf_t *buf_new(size_t bytes_size) {
     }
 
     buf_t *buf = malloc(sizeof(buf_t));
+    buf->bytes_cur = 0;
     buf->bytes_len = 0;
     buf->bytes_size = bytes_size;
     buf->bytes = malloc(buf->bytes_size);
@@ -288,6 +289,7 @@ httpreq_t *httpreq_new() {
     req->uri = NULL;
     req->version = NULL;
     req->headers = stringmap_new(10); // initial room for n headers
+    req->head = buf_new(0);
     req->body = buf_new(0);
     return req;
 }
@@ -296,13 +298,15 @@ void httpreq_free(httpreq_t *req) {
     if (req->method) free(req->method);
     if (req->uri) free(req->uri);
     if (req->version) free(req->version);
+    if (req->head) buf_free(req->head);
+    if (req->body) buf_free(req->body);
     stringmap_free(req->headers);
-    buf_free(req->body);
 
     req->method = NULL;
     req->uri = NULL;
     req->version = NULL;
     req->headers = NULL;
+    req->head = NULL;
     req->body = NULL;
     free(req);
 }
@@ -412,6 +416,7 @@ httpresp_t *httpresp_new() {
     resp->statustext = NULL;
     resp->version = NULL;
     resp->headers = stringmap_new(10); // initial room for n headers
+    resp->head = buf_new(0);
     resp->body = buf_new(0);
     return resp;
 }
@@ -419,12 +424,14 @@ httpresp_t *httpresp_new() {
 void httpresp_free(httpresp_t *resp) {
     if (resp->statustext) free(resp->statustext);
     if (resp->version) free(resp->version);
+    if (resp->head) buf_free(resp->head);
+    if (resp->body) buf_free(resp->body);
     stringmap_free(resp->headers);
-    buf_free(resp->body);
 
     resp->statustext = NULL;
     resp->version = NULL;
     resp->headers = NULL;
+    resp->head = NULL;
     resp->body = NULL;
     free(resp);
 }
@@ -453,11 +460,11 @@ void snprintf_to_buf(buf_t *buf, const char *fmt, ...) {
     buf_append(buf, line, strlen(line));
 }
 
-void httpresp_head_to_buf(httpresp_t *resp, buf_t *buf) {
-    snprintf_to_buf(buf, "%s %d %s\n", resp->version, resp->status, resp->statustext);
-    snprintf_to_buf(buf, "Content-Type: text/html\n");
-    snprintf_to_buf(buf, "Content-Length: %ld\n", resp->body->bytes_len);
+void httpresp_gen_headbuf(httpresp_t *resp) {
+    snprintf_to_buf(resp->head, "%s %d %s\n", resp->version, resp->status, resp->statustext);
+    snprintf_to_buf(resp->head, "Content-Type: text/html\n");
+    snprintf_to_buf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
 
-    buf_append(buf, "\r\n", 2);
+    buf_append(resp->head, "\r\n", 2);
 }
 

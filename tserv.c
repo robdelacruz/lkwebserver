@@ -23,21 +23,13 @@
 typedef struct clientctx {
     int sock;                   // client socket
     sockbuf_t *sb;              // input buffer for reading lines
-    httpreq_t *req;             // http request being parsed
+    httpreq_t *req;             // http request received
+    httpresp_t *resp;           // http response to be sent
 
     char *partial_line;         // partial line from previous read
     int nlinesread;             // number of lines read so far
     int empty_line_parsed;      // flag indicating whether empty line received
 
-    httpresp_t *resp;
-
-    // buffer containing response head including blank line
-    // with number of response head bytes sent so far
-    buf_t *resphead;
-    size_t resphead_bytes_sent;
-
-    // number of resp body bytes sent so far
-    size_t respbody_bytes_sent;
 
     struct clientctx *next;     // linked list to next client
 } clientctx_t;
@@ -182,15 +174,10 @@ clientctx_t *clientctx_new(int sock) {
     ctx->sock = sock;
     ctx->sb = sockbuf_new(sock, 0);
     ctx->req = httpreq_new();
+    ctx->resp = httpresp_new();
     ctx->partial_line = NULL;
     ctx->nlinesread = 0;
     ctx->empty_line_parsed = 0;
-
-    ctx->resp = httpresp_new();
-    ctx->resphead = buf_new(0);
-
-    ctx->resphead_bytes_sent = 0;
-    ctx->respbody_bytes_sent = 0;
     ctx->next = NULL;
     return ctx;
 }
@@ -199,7 +186,6 @@ void clientctx_free(clientctx_t *ctx) {
     sockbuf_free(ctx->sb);
     httpreq_free(ctx->req);
     httpresp_free(ctx->resp);
-
     if (ctx->partial_line) {
         free(ctx->partial_line);
     }
@@ -398,7 +384,7 @@ void process_line(clientctx_t *ctx, char *line) {
         printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
             req->method, req->uri, 200);
 
-        if (ctx->resphead->bytes_len == 0) {
+        if (ctx->resp->head->bytes_len == 0) {
             process_client_request(ctx);
         }
         return;
@@ -441,7 +427,7 @@ void process_client_request(clientctx_t *ctx) {
         ctx->resp->statustext = strdup("Unsupported method ('method here')");
         ctx->resp->version = strdup("HTTP/1.0");
 
-        // Compose respbody buffer
+        // Compose resp body buffer
         buf_append(ctx->resp->body, html_error_start, strlen(html_error_start));
         snprintf(line, RESPONSE_LINE_MAXSIZE, "<p>Error code: %d</p>\n", ctx->resp->status);
         buf_append(ctx->resp->body, line, strlen(line));
@@ -449,7 +435,7 @@ void process_client_request(clientctx_t *ctx) {
         buf_append(ctx->resp->body, line, strlen(line));
         buf_append(ctx->resp->body, html_error_end, strlen(html_error_end));
 
-        httpresp_head_to_buf(ctx->resp, ctx->resphead);
+        httpresp_gen_headbuf(ctx->resp);
 
         FD_SET(ctx->sock, &writefds);
         return;
@@ -461,7 +447,7 @@ void process_client_request(clientctx_t *ctx) {
         ctx->resp->version = strdup("HTTP/1.0");
         buf_append(ctx->resp->body, html_sample, strlen(html_sample));
 
-        httpresp_head_to_buf(ctx->resp, ctx->resphead);
+        httpresp_gen_headbuf(ctx->resp);
 
         FD_SET(ctx->sock, &writefds);
     }
@@ -536,13 +522,13 @@ void send_response_to_client(int clientfd) {
     assert(ctx->sb->sock == clientfd);
 
     // Send as much response bytes as the client will receive.
-    // response header (resphead) gets sent first,
-    // followed by response body (respbody).
-    if (ctx->resphead_bytes_sent < ctx->resphead->bytes_len) {
+    // response header (resp head) gets sent first,
+    // followed by response body (resp body).
+    if (ctx->resp->head->bytes_cur < ctx->resp->head->bytes_len) {
         // send resphead
         int z = sock_send(ctx->sock,
-            ctx->resphead->bytes + ctx->resphead_bytes_sent,
-            ctx->resphead->bytes_len - ctx->resphead_bytes_sent);
+            ctx->resp->head->bytes + ctx->resp->head->bytes_cur,
+            ctx->resp->head->bytes_len - ctx->resp->head->bytes_cur);
         if (z == -1) {
             return;
         }
@@ -551,12 +537,12 @@ void send_response_to_client(int clientfd) {
             remove_clientctx(&ctxhead, ctx->sock);
             return;
         }
-        ctx->resphead_bytes_sent += z;
-    } else if (ctx->respbody_bytes_sent < ctx->resp->body->bytes_len) {
-        // send respbody
+        ctx->resp->head->bytes_cur += z;
+    } else if (ctx->resp->body->bytes_cur < ctx->resp->body->bytes_len) {
+        // send resp body
         int z = sock_send(ctx->sock,
-            ctx->resp->body->bytes + ctx->respbody_bytes_sent,
-            ctx->resp->body->bytes_len - ctx->respbody_bytes_sent);
+            ctx->resp->body->bytes + ctx->resp->body->bytes_cur,
+            ctx->resp->body->bytes_len - ctx->resp->body->bytes_cur);
         if (z == -1) {
             return;
         }
@@ -565,7 +551,7 @@ void send_response_to_client(int clientfd) {
             remove_clientctx(&ctxhead, ctx->sock);
             return;
         }
-        ctx->respbody_bytes_sent += z;
+        ctx->resp->body->bytes_cur += z;
     } else {
         FD_CLR(ctx->sock, &readfds);
         FD_CLR(ctx->sock, &writefds);
