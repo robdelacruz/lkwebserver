@@ -54,6 +54,7 @@ httpresp_t *process_req(httpreq_t *req);
 int is_valid_http_method(char *method);
 
 void send_response_to_client(int clientfd);
+char *fileext(char *filepath);
 
 clientctx_t *ctxhead = NULL;
 fd_set readfds;
@@ -402,6 +403,8 @@ void process_line(clientctx_t *ctx, char *line) {
 
 // Generate an http response to an http request.
 httpresp_t *process_req(httpreq_t *req) {
+    int z;
+
     static char *html_error_start = 
        "<!DOCTYPE html>\n"
        "<html>\n"
@@ -437,6 +440,13 @@ httpresp_t *process_req(httpreq_t *req) {
         resp->status = 200;
         resp->statustext = strdup("OK");
         resp->version = strdup("HTTP/1.0");
+        char *content_type;
+        z = asprintf(&content_type, "text/%s;", fileext(uri));
+        if (z == -1) {
+            content_type = strdup("text/plain");
+        }
+        stringmap_set(resp->headers, "Content-Type", content_type);
+        free(content_type);
 
         char *uri_filepath = get_current_dir_name();
         if (uri_filepath == NULL) {
@@ -446,11 +456,12 @@ httpresp_t *process_req(httpreq_t *req) {
         uri_filepath = astrncat(uri_filepath, uri, strlen(uri));
         printf("uri_filepath: %s\n", uri_filepath);
 
-        int z = readfile(uri_filepath, resp->body);
+        z = readfile(uri_filepath, resp->body);
         if (z == -1) {
             print_err("readfile()");
         }
-//        buf_append(resp->body, html_sample, strlen(html_sample));
+        free(uri_filepath);
+
         httpresp_gen_headbuf(resp);
         return resp;
     }
@@ -472,6 +483,25 @@ int is_valid_http_method(char *method) {
     }
 
     return 0;
+}
+
+// Return ptr to start of file extension within filepath.
+// Ex. "path/to/index.html" returns "index.html"
+char *fileext(char *filepath) {
+    int filepath_len = strlen(filepath);
+    // filepath of "" returns ext of "".
+    if (filepath_len == 0) {
+        return filepath;
+    }
+
+    char *p = filepath + strlen(filepath) - 1;
+    while (p >= filepath) {
+        if (*p == '.') {
+            return p+1;
+        }
+        p--;
+    }
+    return filepath;
 }
 
 void close_client(clientctx_t *ctx) {

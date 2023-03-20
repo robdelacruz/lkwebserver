@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
     printf("Connected to %s:%s\n", server_domain, server_port);
 
     char *reqmsg = 
-        "GET /www/index.html HTTP/1.0\r\n" 
+        "GET /style.css HTTP/1.0\r\n" 
         "From: rob@robdelacruz.xyz\r\n" 
         "User-Agent: tclient/1.0\r\n" 
         "\r\n"

@@ -513,7 +513,6 @@ void httpresp_debugprint(httpresp_t *resp) {
 
 void httpresp_gen_headbuf(httpresp_t *resp) {
     buf_sprintf(resp->head, "%s %d %s\n", resp->version, resp->status, resp->statustext);
-    buf_sprintf(resp->head, "Content-Type: text/html\n");
     buf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     buf_append(resp->head, "\r\n", 2);
 }
