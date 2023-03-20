@@ -410,17 +410,18 @@ httpresp_t *process_req(httpreq_t *req) {
     static char *html_error_end =
        "</body></html>\n";
 
-    static char *html_sample =
-       "<!DOCTYPE html>\n"
-       "<html>\n"
-       "<head><title>Little Kitten</title></head>\n"
-       "<body><h1>Little Kitten webserver</h1>\n"
-       "<p>Hello Little Kitten!</p>\n"
-       "</body></html>\n";
+//    static char *html_sample =
+//       "<!DOCTYPE html>\n"
+//       "<html>\n"
+//       "<head><title>Little Kitten</title></head>\n"
+//       "<body><h1>Little Kitten webserver</h1>\n"
+//       "<p>Hello Little Kitten!</p>\n"
+//       "</body></html>\n";
 
     httpresp_t *resp = httpresp_new();
 
-    char *method = req->method ? req->method : "";
+    char *method = req->method;
+    char *uri = req->uri;
     if (!is_valid_http_method(method)) {
         resp->status = 501;
         asprintf(&resp->statustext, "Unsupported method ('%s')", method);
@@ -436,7 +437,20 @@ httpresp_t *process_req(httpreq_t *req) {
         resp->status = 200;
         resp->statustext = strdup("OK");
         resp->version = strdup("HTTP/1.0");
-        buf_append(resp->body, html_sample, strlen(html_sample));
+
+        char *uri_filepath = get_current_dir_name();
+        if (uri_filepath == NULL) {
+            uri_filepath = strdup("");
+        }
+        // "/path/to" + "/index.html"
+        uri_filepath = astrncat(uri_filepath, uri, strlen(uri));
+        printf("uri_filepath: %s\n", uri_filepath);
+
+        int z = readfile(uri_filepath, resp->body);
+        if (z == -1) {
+            print_err("readfile()");
+        }
+//        buf_append(resp->body, html_sample, strlen(html_sample));
         httpresp_gen_headbuf(resp);
         return resp;
     }

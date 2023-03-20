@@ -1,7 +1,9 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 #include <errno.h>
 #include <assert.h>
 #include <sys/types.h>
@@ -58,7 +60,6 @@ ssize_t sock_recv(int sock, char *buf, size_t count) {
         }
         nread += z;
     }
-
     return nread;
 }
 
@@ -88,7 +89,6 @@ ssize_t sock_send(int sock, char *buf, size_t count) {
         }
         nsent += z;
     }
-
     return nsent;
 }
 
@@ -281,10 +281,12 @@ int buf_append(buf_t *buf, char *bytes, size_t len) {
     return 0;
 }
 
-// snprintf to buf, with error checking
-#define RESP_LINE_MAXSIZE 2048
+// Append to buf using sprintf() to a fixed length space.
+// More efficient as no memory allocation needed, but it will
+// truncate strings longer than BUF_LINE_MAXSIZE.
+#define BUF_LINE_MAXSIZE 2048
 void buf_sprintf(buf_t *buf, const char *fmt, ...) {
-    char line[RESP_LINE_MAXSIZE];
+    char line[BUF_LINE_MAXSIZE];
 
     va_list args;
     va_start(args, fmt);
@@ -302,6 +304,26 @@ void buf_sprintf(buf_t *buf, const char *fmt, ...) {
     }
 
     buf_append(buf, line, strlen(line));
+}
+
+// Append to buf using asprintf().
+// Can handle all string lengths without truncating, but less
+// efficient as it allocs/deallocs memory.
+void buf_asprintf(buf_t *buf, const char *fmt, ...) {
+    int z;
+    char *pstr = NULL;
+
+    va_list args;
+    va_start(args, fmt);
+    z = asprintf(&pstr, fmt, args);
+    va_end(args);
+
+    if (z == -1) return;
+
+    buf_append(buf, pstr, strlen(pstr)); //$$ use z+1 instead of strlen(pstr)?
+
+    free(pstr);
+    pstr = NULL;
 }
 
 /** httpreq functions **/
@@ -367,6 +389,10 @@ void httpreq_parse_request_line(httpreq_t *req, char *line) {
     req->version = strdup(version);
 
     free(linetmp);
+
+    assert(req->method != NULL);
+    assert(req->uri != NULL);
+    assert(req->version != NULL);
 }
 
 void httpreq_add_header(httpreq_t *req, char *k, char *v) {
@@ -490,5 +516,55 @@ void httpresp_gen_headbuf(httpresp_t *resp) {
     buf_sprintf(resp->head, "Content-Type: text/html\n");
     buf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     buf_append(resp->head, "\r\n", 2);
+}
+
+// Open and read entire file contents into buf.
+ssize_t readfile(char *filepath, buf_t *buf) {
+    int fd = open(filepath, O_RDONLY);
+    if (fd == -1) {
+        return -1;
+    }
+    int z = readfd(fd, buf);
+    if (z == -1) {
+        int tmperrno = errno;
+        close(fd);
+        errno = tmperrno;
+        return z;
+    }
+
+    close(fd);
+    return z;
+}
+
+// Read entire file descriptor contents into buf.
+#define TMPBUF_SIZE 512
+ssize_t readfd(int fd, buf_t *buf) {
+    char tmpbuf[TMPBUF_SIZE];
+
+    int nread = 0;
+    while (1) {
+        int z = read(fd, tmpbuf, TMPBUF_SIZE);
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        if (z == -1) {
+            return z;
+        }
+        if (z == 0) {
+            break;
+        }
+        buf_append(buf, tmpbuf, z);
+        nread += z;
+    }
+    return nread;
+}
+
+// Append src to dest, allocating new memory in dest if needed.
+// Return new pointer to dest.
+char *astrncat(char *dest, char *src, size_t src_len) {
+    int dest_len = strlen(dest);
+    dest = realloc(dest, dest_len + src_len + 1);
+    strncat(dest, src, src_len);
+    return dest;
 }
 
