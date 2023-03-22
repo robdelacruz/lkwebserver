@@ -381,7 +381,7 @@ void process_line(clientctx_t *ctx, char *line) {
 
         httpreq_t *req = ctx->req;
         printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
-            req->method, req->uri, 200);
+            req->method->s, req->uri->s, 200);
 
         ctx->resp = process_req(ctx->req);
         if (ctx->resp) {
@@ -423,30 +423,27 @@ httpresp_t *process_req(httpreq_t *req) {
 
     httpresp_t *resp = httpresp_new();
 
-    char *method = req->method;
-    char *uri = req->uri;
+    char *method = req->method->s;
+    char *uri = req->uri->s;
     if (!is_valid_http_method(method)) {
         resp->status = 501;
-        asprintf(&resp->statustext, "Unsupported method ('%s')", method);
-        resp->version = strdup("HTTP/1.0");
+        lkstr_sprintf(resp->statustext, "Unsupported method ('%s')", method);
+        lkstr_assign(resp->version, "HTTP/1.0");
 
-        buf_append(resp->body, html_error_start, strlen(html_error_start));
-        buf_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext);
-        buf_append(resp->body, html_error_end, strlen(html_error_end));
+        lkbuf_append(resp->body, html_error_start, strlen(html_error_start));
+        lkbuf_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext);
+        lkbuf_append(resp->body, html_error_end, strlen(html_error_end));
         httpresp_gen_headbuf(resp);
         return resp;
     }
     if (!strcmp(method, "GET")) {
         resp->status = 200;
-        resp->statustext = strdup("OK");
-        resp->version = strdup("HTTP/1.0");
-        char *content_type;
-        z = asprintf(&content_type, "text/%s;", fileext(uri));
-        if (z == -1) {
-            content_type = strdup("text/plain");
-        }
-        stringmap_set(resp->headers, "Content-Type", content_type);
-        free(content_type);
+        lkstr_assign(resp->statustext, "OK");
+        lkstr_assign(resp->version, "HTTP/1.0");
+        lkstr_s *content_type = lkstr_new("");
+        lkstr_sprintf(content_type, "text/%s;", fileext(uri));
+        httpresp_add_header(resp, "Content-Type", content_type->s);
+        lkstr_free(content_type);
 
         char *uri_filepath = get_current_dir_name();
         if (uri_filepath == NULL) {

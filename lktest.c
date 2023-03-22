@@ -8,10 +8,12 @@
 
 void lkstr_test();
 void lkstringmap_test();
+void lkbuf_test();
 
 int main(int argc, char *argv[]) {
     lkstr_test();
     lkstringmap_test();
+    lkbuf_test();
     return 0;
 }
 
@@ -108,6 +110,55 @@ void lkstringmap_test() {
     assert(!strcmp(v, "(blank)"));
 
     lkstringmap_free(sm);
+    printf("Done.\n");
+}
+
+void lkbuf_test() {
+    lkbuf_s *buf;
+
+    printf("Running lkbuf_s tests... ");
+    buf = lkbuf_new(0);
+    assert(buf->bytes_size > 0);
+    lkbuf_free(buf);
+
+    buf = lkbuf_new(10);
+    assert(buf->bytes_size == 10);
+    lkbuf_append(buf, "1234567", 7);
+    assert(buf->bytes_len == 7);
+    assert(buf->bytes_size == 10);
+    assert(buf->bytes[0] == '1');
+    assert(buf->bytes[1] == '2');
+    assert(buf->bytes[2] == '3');
+    assert(buf->bytes[5] == '6');
+
+    lkbuf_append(buf, "890", 3);
+    assert(buf->bytes_len == 10);
+    assert(buf->bytes_size == 10);
+    assert(buf->bytes[7] == '8');
+    assert(buf->bytes[8] == '9');
+    assert(buf->bytes[9] == '0');
+    lkbuf_free(buf);
+
+    buf = lkbuf_new(0);
+    lkbuf_append(buf, "12345", 5);
+    assert(buf->bytes_len == 5);
+    assert(!strncmp(buf->bytes+0, "12345", 5));
+    lkbuf_sprintf(buf, "abc %d def %d", 123, 456);
+    assert(buf->bytes_len == 20);
+    assert(!strncmp(buf->bytes+5, "abc 123", 7));
+    assert(!strncmp(buf->bytes+5+8, "def 456", 7));
+    lkbuf_free(buf);
+
+    buf = lkbuf_new(0);
+    lkbuf_append(buf, "12345", 5);
+    assert(buf->bytes_len == 5);
+    assert(!strncmp(buf->bytes+0, "12345", 5));
+    lkbuf_asprintf(buf, "abc %d def %d", 123, 456);
+    assert(buf->bytes_len == 20);
+    assert(!strncmp(buf->bytes+5, "abc 123", 7));
+    assert(!strncmp(buf->bytes+5+8, "def 456", 7));
+    lkbuf_free(buf);
+
     printf("Done.\n");
 }
 

@@ -42,6 +42,9 @@ void lkstr_free(lkstr_s *lks) {
     lks->s = NULL;
     free(lks);
 }
+void lkstr_voidp_free(void *plkstr) {
+    lkstr_free((lkstr_s *) plkstr);
+}
 
 void lkstr_assign(lkstr_s *lks, char *s) {
     size_t s_len = strlen(s);

@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <fcntl.h>
+#include "lklib.h"
 #include "netfuncs.h"
 
 // Remove trailing CRLF or LF (\n) from string.
@@ -205,147 +206,26 @@ void sockbuf_debugprint(sockbuf_t *sb) {
     printf("\n");
 }
 
-stringmap_t *stringmap_new() {
-    stringmap_t *sm = malloc(sizeof(stringmap_t));
-    sm->items_size = 10; // start with room for n headers
-    sm->items_len = 0;
 
-    sm->items = malloc(sm->items_size * sizeof(keyval_t));
-    memset(sm->items, 0, sm->items_size * sizeof(keyval_t));
-    return sm;
-}
-
-void stringmap_free(stringmap_t *sm) {
-    assert(sm->items != NULL);
-
-    for (int i=0; i < sm->items_len; i++) {
-        free(sm->items[i].k);
-        free(sm->items[i].v);
-    }
-    free(sm->items);
-    sm->items = NULL;
-    free(sm);
-}
-
-void stringmap_set(stringmap_t *sm, char *k, char *v) {
-    assert(sm->items_size >= sm->items_len);
-
-    // If reached capacity, expand the array.
-    if (sm->items_len == sm->items_size) {
-        sm->items_size += 10;
-        sm->items = realloc(sm->items, sm->items_size * sizeof(keyval_t));
-        memset(sm->items + sm->items_len, 0, sm->items_size - sm->items_len);
-    }
-
-    sm->items[sm->items_len].k = strdup(k);
-    sm->items[sm->items_len].v = strdup(v);
-    sm->items_len++;
-}
-
-
-buf_t *buf_new(size_t bytes_size) {
-    if (bytes_size == 0) {
-//        buf_size = 1024;
-        bytes_size = 1;
-    }
-
-    buf_t *buf = malloc(sizeof(buf_t));
-    buf->bytes_cur = 0;
-    buf->bytes_len = 0;
-    buf->bytes_size = bytes_size;
-    buf->bytes = malloc(buf->bytes_size);
-    return buf;
-}
-
-void buf_free(buf_t *buf) {
-    assert(buf->bytes != NULL);
-    free(buf->bytes);
-    buf->bytes = NULL;
-    free(buf);
-}
-
-int buf_append(buf_t *buf, char *bytes, size_t len) {
-    // If not enough capacity to append bytes, expand the bytes buffer.
-    if (len > buf->bytes_size - buf->bytes_len) {
-        char *bs = realloc(buf->bytes, buf->bytes_size + len);
-        if (bs == NULL) {
-            return -1;
-        }
-        buf->bytes = bs;
-        buf->bytes_size += len;
-    }
-    memcpy(buf->bytes + buf->bytes_len, bytes, len);
-    buf->bytes_len += len;
-
-    assert(buf->bytes != NULL);
-    return 0;
-}
-
-// Append to buf using sprintf() to a fixed length space.
-// More efficient as no memory allocation needed, but it will
-// truncate strings longer than BUF_LINE_MAXSIZE.
-#define BUF_LINE_MAXSIZE 2048
-void buf_sprintf(buf_t *buf, const char *fmt, ...) {
-    char line[BUF_LINE_MAXSIZE];
-
-    va_list args;
-    va_start(args, fmt);
-    int z = vsnprintf(line, sizeof(line), fmt, args);
-    va_end(args);
-
-    // error in snprintf()
-    if (z < 0) return;
-
-    // if snprintf() truncated the output, fill in the terminating chars.
-    if (z > sizeof(line)) {
-        z = sizeof(line);
-        line[z-2] = '\n';
-        line[z-1] = '\0';
-    }
-
-    buf_append(buf, line, strlen(line));
-}
-
-// Append to buf using asprintf().
-// Can handle all string lengths without truncating, but less
-// efficient as it allocs/deallocs memory.
-void buf_asprintf(buf_t *buf, const char *fmt, ...) {
-    int z;
-    char *pstr = NULL;
-
-    va_list args;
-    va_start(args, fmt);
-    z = asprintf(&pstr, fmt, args);
-    va_end(args);
-
-    if (z == -1) return;
-
-    buf_append(buf, pstr, strlen(pstr)); //$$ use z+1 instead of strlen(pstr)?
-
-    free(pstr);
-    pstr = NULL;
-}
-
-/** httpreq functions **/
-
+/*** httpreq functions ***/
 httpreq_t *httpreq_new() {
     httpreq_t *req = malloc(sizeof(httpreq_t));
-    req->method = NULL;
-    req->uri = NULL;
-    req->version = NULL;
-    req->headers = stringmap_new(10); // initial room for n headers
-    req->head = buf_new(0);
-    req->body = buf_new(0);
+    req->method = lkstr_new("");
+    req->uri = lkstr_new("");
+    req->version = lkstr_new("");
+    req->headers = lkstringmap_funcs_new(lkstr_voidp_free);
+    req->head = lkbuf_new(0);
+    req->body = lkbuf_new(0);
     return req;
 }
 
 void httpreq_free(httpreq_t *req) {
-    if (req->method) free(req->method);
-    if (req->uri) free(req->uri);
-    if (req->version) free(req->version);
-    if (req->head) buf_free(req->head);
-    if (req->body) buf_free(req->body);
-    stringmap_free(req->headers);
+    lkstr_free(req->method);
+    lkstr_free(req->uri);
+    lkstr_free(req->version);
+    lkstringmap_free(req->headers);
+    lkbuf_free(req->head);
+    lkbuf_free(req->body);
 
     req->method = NULL;
     req->uri = NULL;
@@ -384,19 +264,15 @@ void httpreq_parse_request_line(httpreq_t *req, char *line) {
     if (ntoksread > 1) uri = toks[1];
     if (ntoksread > 2) version = toks[2];
 
-    req->method = strdup(method);
-    req->uri = strdup(uri);
-    req->version = strdup(version);
+    lkstr_assign(req->method, method);
+    lkstr_assign(req->uri, uri);
+    lkstr_assign(req->version, version);
 
     free(linetmp);
-
-    assert(req->method != NULL);
-    assert(req->uri != NULL);
-    assert(req->version != NULL);
 }
 
 void httpreq_add_header(httpreq_t *req, char *k, char *v) {
-    stringmap_set(req->headers, k, v);
+    lkstringmap_set(req->headers, k, lkstr_new(v));
 }
 
 // Parse header line
@@ -427,34 +303,33 @@ void httpreq_parse_header_line(httpreq_t *req, char *line) {
 }
 
 void httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len) {
-    buf_append(req->body, bytes, bytes_len);
+    lkbuf_append(req->body, bytes, bytes_len);
 }
 
 void httpreq_debugprint(httpreq_t *req) {
-    if (req->method) {
-        printf("method: %s\n", req->method);
-    }
-    if (req->uri) {
-        printf("uri: %s\n", req->uri);
-    }
-    if (req->version) {
-        printf("version: %s\n", req->version);
-    }
+    assert(req->method != NULL);
+    assert(req->uri != NULL);
+    assert(req->version != NULL);
+    assert(req->head != NULL);
+    assert(req->body != NULL);
+
+    printf("method: %s\n", req->method->s);
+    printf("uri: %s\n", req->uri->s);
+    printf("version: %s\n", req->version->s);
+
     printf("headers_size: %ld\n", req->headers->items_size);
     printf("headers_len: %ld\n", req->headers->items_len);
 
     printf("Headers:\n");
     for (int i=0; i < req->headers->items_len; i++) {
-        printf("%s: %s\n", req->headers->items[i].k, req->headers->items[i].v);
+        printf("%s: %s\n", req->headers->items[i].k->s, (char *)req->headers->items[i].v);
     }
 
-    if (req->body) {
-        printf("Body:\n");
-        for (int i=0; i < req->body->bytes_len; i++) {
-            putchar(req->body->bytes[i]);
-        }
-        printf("\n");
+    printf("Body:\n");
+    for (int i=0; i < req->body->bytes_len; i++) {
+        putchar(req->body->bytes[i]);
     }
+    printf("\n");
 }
 
 /** httpresp functions **/
@@ -462,20 +337,20 @@ void httpreq_debugprint(httpreq_t *req) {
 httpresp_t *httpresp_new() {
     httpresp_t *resp = malloc(sizeof(httpresp_t));
     resp->status = 0;
-    resp->statustext = NULL;
-    resp->version = NULL;
-    resp->headers = stringmap_new(10); // initial room for n headers
-    resp->head = buf_new(0);
-    resp->body = buf_new(0);
+    resp->statustext = lkstr_new("");
+    resp->version = lkstr_new("");
+    resp->headers = lkstringmap_funcs_new(lkstr_voidp_free);
+    resp->head = lkbuf_new(0);
+    resp->body = lkbuf_new(0);
     return resp;
 }
 
 void httpresp_free(httpresp_t *resp) {
-    if (resp->statustext) free(resp->statustext);
-    if (resp->version) free(resp->version);
-    if (resp->head) buf_free(resp->head);
-    if (resp->body) buf_free(resp->body);
-    stringmap_free(resp->headers);
+    lkstr_free(resp->statustext);
+    lkstr_free(resp->version);
+    lkstringmap_free(resp->headers);
+    lkbuf_free(resp->head);
+    lkbuf_free(resp->body);
 
     resp->statustext = NULL;
     resp->version = NULL;
@@ -485,40 +360,43 @@ void httpresp_free(httpresp_t *resp) {
     free(resp);
 }
 
+void httpresp_add_header(httpresp_t *resp, char *k, char *v) {
+    lkstringmap_set(resp->headers, k, lkstr_new(v));
+}
+
+void httpresp_gen_headbuf(httpresp_t *resp) {
+    lkbuf_sprintf(resp->head, "%s %d %s\n", resp->version, resp->status, resp->statustext);
+    lkbuf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
+    lkbuf_append(resp->head, "\r\n", 2);
+}
+
 void httpresp_debugprint(httpresp_t *resp) {
+    assert(resp->statustext != NULL);
+    assert(resp->version != NULL);
+    assert(resp->headers != NULL);
+    assert(resp->head);
+    assert(resp->body);
+
     printf("status: %d\n", resp->status);
-    if (resp->statustext) {
-        printf("statustext: %s\n", resp->statustext);
-    }
-    if (resp->version) {
-        printf("version: %s\n", resp->version);
-    }
+    printf("statustext: %s\n", resp->statustext->s);
+    printf("version: %s\n", resp->version->s);
     printf("headers_size: %ld\n", resp->headers->items_size);
     printf("headers_len: %ld\n", resp->headers->items_len);
 
     printf("Headers:\n");
     for (int i=0; i < resp->headers->items_len; i++) {
-        printf("%s: %s\n", resp->headers->items[i].k, resp->headers->items[i].v);
+        printf("%s: %s\n", resp->headers->items[i].k->s, (char *)resp->headers->items[i].v);
     }
 
-    if (resp->body) {
-        printf("Body:\n");
-        for (int i=0; i < resp->body->bytes_len; i++) {
-            putchar(resp->body->bytes[i]);
-        }
-        printf("\n");
+    printf("Body:\n");
+    for (int i=0; i < resp->body->bytes_len; i++) {
+        putchar(resp->body->bytes[i]);
     }
-}
-
-
-void httpresp_gen_headbuf(httpresp_t *resp) {
-    buf_sprintf(resp->head, "%s %d %s\n", resp->version, resp->status, resp->statustext);
-    buf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
-    buf_append(resp->head, "\r\n", 2);
+    printf("\n");
 }
 
 // Open and read entire file contents into buf.
-ssize_t readfile(char *filepath, buf_t *buf) {
+ssize_t readfile(char *filepath, lkbuf_s *buf) {
     int fd = open(filepath, O_RDONLY);
     if (fd == -1) {
         return -1;
@@ -537,7 +415,7 @@ ssize_t readfile(char *filepath, buf_t *buf) {
 
 // Read entire file descriptor contents into buf.
 #define TMPBUF_SIZE 512
-ssize_t readfd(int fd, buf_t *buf) {
+ssize_t readfd(int fd, lkbuf_s *buf) {
     char tmpbuf[TMPBUF_SIZE];
 
     int nread = 0;
@@ -552,7 +430,7 @@ ssize_t readfd(int fd, buf_t *buf) {
         if (z == 0) {
             break;
         }
-        buf_append(buf, tmpbuf, z);
+        lkbuf_append(buf, tmpbuf, z);
         nread += z;
     }
     return nread;
