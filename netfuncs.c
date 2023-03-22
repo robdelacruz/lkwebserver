@@ -210,8 +210,8 @@ stringmap_t *stringmap_new() {
     sm->items_size = 10; // start with room for n headers
     sm->items_len = 0;
 
-    sm->items = malloc(sm->items_size * sizeof(stringmap_t));
-    memset(sm->items, 0, sm->items_size * sizeof(stringmap_t));
+    sm->items = malloc(sm->items_size * sizeof(keyval_t));
+    memset(sm->items, 0, sm->items_size * sizeof(keyval_t));
     return sm;
 }
 

@@ -78,10 +78,14 @@ void lkstr_append(lkstr_s *lks, char *s) {
     lks->s_len = lks->s_len + s_len;
 }
 
-int lkstr_equal(lkstr_s *lks1, lkstr_s *lks2) {
-    if (strcmp(lks1->s, lks2->s) == 0) {
+int lkstr_sz_equal(lkstr_s *lks1, char *s2) {
+    if (strcmp(lks1->s, s2) == 0) {
         return 1;
     }
     return 0;
+}
+
+int lkstr_equal(lkstr_s *lks1, lkstr_s *lks2) {
+    return lkstr_sz_equal(lks1, lks2->s);
 }
 

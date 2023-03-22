@@ -6,7 +6,16 @@
 #include <assert.h>
 #include "lklib.h"
 
+void lkstr_test();
+void lkstringmap_test();
+
 int main(int argc, char *argv[]) {
+    lkstr_test();
+    lkstringmap_test();
+    return 0;
+}
+
+void lkstr_test() {
     lkstr_s *lks, *lks2;
 
     printf("Running lkstr_s tests... ");
@@ -53,7 +62,52 @@ int main(int argc, char *argv[]) {
     lkstr_free(lks);
     lkstr_free(lks2);
     printf("Done.\n");
+}
 
-    return 0;
+void lkstringmap_test() {
+    lkstringmap_s *sm;
+    void *v;
+
+    printf("Running lkstringmap_s tests... ");
+    sm = lkstringmap_funcs_new(free);
+    assert(sm->items_len == 0);
+
+    lkstringmap_set(sm, "abc", strdup("ABC"));
+    lkstringmap_set(sm, "def", strdup("DEF"));
+    assert(sm->items_len == 2);
+    lkstringmap_set(sm, "123", strdup("one two three"));
+    lkstringmap_set(sm, "  ", strdup("space space"));
+    lkstringmap_set(sm, "", strdup("(blank)"));
+    assert(sm->items_len == 5);
+
+    v = lkstringmap_get(sm, "abc");
+    assert(!strcmp(v, "ABC"));
+
+    lkstringmap_set(sm, "abc", strdup("A B C"));
+    v = lkstringmap_get(sm, "abc");
+    assert(sm->items_len == 5);
+    assert(strcmp(v, "ABC"));
+    assert(!strcmp(v, "A B C"));
+
+    lkstringmap_set(sm, "abc ", strdup("ABC(space)"));
+    assert(sm->items_len == 6);
+    v = lkstringmap_get(sm, "abc ");
+    assert(!strcmp(v, "ABC(space)"));
+    v = lkstringmap_get(sm, "abc");
+    assert(!strcmp(v, "A B C"));
+
+    v = lkstringmap_get(sm, "ABC");
+    assert(v == NULL);
+    v = lkstringmap_get(sm, "123");
+    assert(!strcmp(v, "one two three"));
+    v = lkstringmap_get(sm, "  ");
+    assert(!strcmp(v, "space space"));
+    v = lkstringmap_get(sm, " ");
+    assert(v == NULL);
+    v = lkstringmap_get(sm, "");
+    assert(!strcmp(v, "(blank)"));
+
+    lkstringmap_free(sm);
+    printf("Done.\n");
 }
 
