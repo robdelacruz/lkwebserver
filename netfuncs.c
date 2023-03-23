@@ -365,7 +365,7 @@ void httpresp_add_header(httpresp_t *resp, char *k, char *v) {
 }
 
 void httpresp_gen_headbuf(httpresp_t *resp) {
-    lkbuf_sprintf(resp->head, "%s %d %s\n", resp->version, resp->status, resp->statustext);
+    lkbuf_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
     lkbuf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     lkbuf_append(resp->head, "\r\n", 2);
 }
