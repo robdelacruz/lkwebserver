@@ -10,7 +10,7 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include "lklib.h"
-#include "netfuncs.h"
+#include "lknet.h"
 
 // Remove trailing CRLF or LF (\n) from string.
 void chomp(char* s) {
@@ -93,44 +93,44 @@ ssize_t sock_send(int sock, char *buf, size_t count) {
     return nsent;
 }
 
-/** sockbuf functions **/
+/** lksocketreader functions **/
 
-sockbuf_t *sockbuf_new(int sock, size_t buf_size) {
-    sockbuf_t *sb = malloc(sizeof(sockbuf_t));
+lksocketreader_s *lksocketreader_new(int sock, size_t buf_size) {
+    lksocketreader_s *sr = malloc(sizeof(lksocketreader_s));
 
     if (buf_size == 0) {
         buf_size = 1024;
     }
-    sb->sock = sock;
-    sb->buf_size = buf_size;
-    sb->buf = malloc(buf_size);
-    sb->buf_len = 0;
-    sb->next_read_pos = 0;
-    sb->sockclosed = 0;
-    memset(sb->buf, '*', sb->buf_size); // initialize for debugging purposes.
+    sr->sock = sock;
+    sr->buf_size = buf_size;
+    sr->buf = malloc(buf_size);
+    sr->buf_len = 0;
+    sr->next_read_pos = 0;
+    sr->sockclosed = 0;
+    memset(sr->buf, '*', sr->buf_size); // initialize for debugging purposes.
 
-    return sb;
+    return sr;
 }
 
-void sockbuf_free(sockbuf_t *sb) {
-    free(sb->buf);
-    sb->buf = NULL;
+void lksocketreader_free(lksocketreader_s *sr) {
+    free(sr->buf);
+    sr->buf = NULL;
 
-    free(sb);
+    free(sr);
 }
 
-int sockbuf_eof(sockbuf_t *sb) {
-    return sb->sockclosed;
+int lksocketreader_eof(lksocketreader_s *sr) {
+    return sr->sockclosed;
 }
 
 // Read one line from buffered socket, including the \n char, \0 terminated.
 // Returns num bytes read or -1 for error.
-ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
+ssize_t lksocketreader_readline(lksocketreader_s *sr, char *dst, size_t dst_len) {
     assert(dst_len > 2); // Reserve space for \n and \0.
-    assert(sb->buf_size >= sb->buf_len);
-    assert(sb->buf_len >= sb->next_read_pos);
+    assert(sr->buf_size >= sr->buf_len);
+    assert(sr->buf_len >= sr->next_read_pos);
 
-    if (sb->sockclosed) {
+    if (sr->sockclosed) {
         return 0;
     }
     if (dst_len <= 2) {
@@ -141,12 +141,12 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
     int nread = 0;
     while (nread < dst_len-1) { // leave space for null terminator
         // If no buffer chars available, read from socket.
-        if (sb->next_read_pos >= sb->buf_len) {
-            memset(sb->buf, '*', sb->buf_size); // initialize for debugging purposes.
-            int z = recv(sb->sock, sb->buf, sb->buf_size, MSG_DONTWAIT);
+        if (sr->next_read_pos >= sr->buf_len) {
+            memset(sr->buf, '*', sr->buf_size); // initialize for debugging purposes.
+            int z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT);
             // socket closed, no more data
             if (z == 0) {
-                sb->sockclosed = 1;
+                sr->sockclosed = 1;
                 break;
             }
             // interrupt occured during read, retry read.
@@ -163,18 +163,18 @@ ssize_t sockbuf_readline(sockbuf_t *sb, char *dst, size_t dst_len) {
                 dst[nread] = '\0';
                 return z;
             }
-            sb->buf_len = z;
-            sb->next_read_pos = 0;
+            sr->buf_len = z;
+            sr->next_read_pos = 0;
         }
 
         // Copy unread buffer bytes into dst until a '\n' char.
         while (nread < dst_len-1) {
-            if (sb->next_read_pos >= sb->buf_len) {
+            if (sr->next_read_pos >= sr->buf_len) {
                 break;
             }
-            dst[nread] = sb->buf[sb->next_read_pos];
+            dst[nread] = sr->buf[sr->next_read_pos];
             nread++;
-            sb->next_read_pos++;
+            sr->next_read_pos++;
 
             if (dst[nread-1] == '\n') {
                 goto readline_end;
@@ -197,19 +197,19 @@ void debugprint_buf(char *buf, size_t buf_size) {
     printf("buf_size: %ld\n", buf_size);
 }
 
-void sockbuf_debugprint(sockbuf_t *sb) {
-    printf("buf_size: %ld\n", sb->buf_size);
-    printf("buf_len: %ld\n", sb->buf_len);
-    printf("next_read_pos: %d\n", sb->next_read_pos);
-    printf("sockclosed: %d\n", sb->sockclosed);
-    debugprint_buf(sb->buf, sb->buf_size);
+void lksocketreader_debugprint(lksocketreader_s *sr) {
+    printf("buf_size: %ld\n", sr->buf_size);
+    printf("buf_len: %ld\n", sr->buf_len);
+    printf("next_read_pos: %d\n", sr->next_read_pos);
+    printf("sockclosed: %d\n", sr->sockclosed);
+    debugprint_buf(sr->buf, sr->buf_size);
     printf("\n");
 }
 
 
 /*** httpreq functions ***/
-httprequest_s *httprequest_new() {
-    httprequest_s *req = malloc(sizeof(httprequest_s));
+lkhttprequest_s *lkhttprequest_new() {
+    lkhttprequest_s *req = malloc(sizeof(lkhttprequest_s));
     req->method = lkstr_new("");
     req->uri = lkstr_new("");
     req->version = lkstr_new("");
@@ -219,7 +219,7 @@ httprequest_s *httprequest_new() {
     return req;
 }
 
-void httprequest_free(httprequest_s *req) {
+void lkhttprequest_free(lkhttprequest_s *req) {
     lkstr_free(req->method);
     lkstr_free(req->uri);
     lkstr_free(req->version);
@@ -236,9 +236,72 @@ void httprequest_free(httprequest_s *req) {
     free(req);
 }
 
-// Parse initial request line
-// Ex. GET /path/to/index.html HTTP/1.0
-void httprequest_parse_request_line(httprequest_s *req, char *line) {
+void lkhttprequest_add_header(lkhttprequest_s *req, char *k, char *v) {
+    lkstringmap_set(req->headers, k, lkstr_new(v));
+}
+
+void lkhttprequest_append_body(lkhttprequest_s *req, char *bytes, int bytes_len) {
+    lkbuf_append(req->body, bytes, bytes_len);
+}
+
+void lkhttprequest_debugprint(lkhttprequest_s *req) {
+    assert(req->method != NULL);
+    assert(req->uri != NULL);
+    assert(req->version != NULL);
+    assert(req->head != NULL);
+    assert(req->body != NULL);
+
+    printf("method: %s\n", req->method->s);
+    printf("uri: %s\n", req->uri->s);
+    printf("version: %s\n", req->version->s);
+
+    printf("headers_size: %ld\n", req->headers->items_size);
+    printf("headers_len: %ld\n", req->headers->items_len);
+
+    printf("Headers:\n");
+    for (int i=0; i < req->headers->items_len; i++) {
+        printf("%s: %s\n", req->headers->items[i].k->s, (char *)req->headers->items[i].v);
+    }
+
+    printf("Body:\n");
+    for (int i=0; i < req->body->bytes_len; i++) {
+        putchar(req->body->bytes[i]);
+    }
+    printf("\n");
+}
+
+
+/*** lkhttprequestparser functions ***/
+lkhttprequestparser_s *lkhttprequestparser_new() {
+    lkhttprequestparser_s *parser = malloc(sizeof(lkhttprequestparser_s));
+    parser->nlinesread = 0;
+    parser->header_content_length = 0;
+    parser->head_complete = 0;
+    parser->body_complete = 0;
+    parser->req = lkhttprequest_new();
+    return parser;
+}
+
+void lkhttprequestparser_free(lkhttprequestparser_s *parser) {
+    lkhttprequest_free(parser->req);
+    parser->req = NULL;
+    free(parser);
+}
+
+// Clear any pending state.
+void lkhttprequestparser_reset(lkhttprequestparser_s *parser) {
+    parser->nlinesread = 0;
+    parser->header_content_length = 0;
+    parser->head_complete = 0;
+    parser->body_complete = 0;
+
+    lkhttprequest_free(parser->req);
+    parser->req = lkhttprequest_new();
+}
+
+// Parse initial request line in the format:
+// GET /path/to/index.html HTTP/1.0
+void parse_request_line(char *line, lkhttprequest_s *req) {
     char *toks[3];
     int ntoksread = 0;
 
@@ -271,13 +334,11 @@ void httprequest_parse_request_line(httprequest_s *req, char *line) {
     free(linetmp);
 }
 
-void httprequest_add_header(httprequest_s *req, char *k, char *v) {
-    lkstringmap_set(req->headers, k, lkstr_new(v));
+void parse_body(char *bodybytes, size_t bodybytes_len, lkhttprequest_s *req) {
 }
 
-// Parse header line
-// Ex. User-Agent: browser
-void httprequest_parse_header_line(httprequest_s *req, char *line) {
+// Parse header line in the format Ex. User-Agent: browser
+void parse_header_line(lkhttprequestparser_s *parser, char *line, lkhttprequest_s *req) {
     char *saveptr;
     char *delim = ":";
 
@@ -297,45 +358,80 @@ void httprequest_parse_header_line(httprequest_s *req, char *line) {
     while (*v == ' ' || *v == '\t') {
         v++;
     }
-    httprequest_add_header(req, k, v);
+    lkhttprequest_add_header(req, k, v);
+
+    if (!strcasecmp(k, "Content-Length")) {
+        int content_length = atoi(v);
+        parser->header_content_length = content_length;
+    }
 
     free(linetmp);
 }
 
-void httprequest_append_body(httprequest_s *req, char *bytes, int bytes_len) {
-    lkbuf_append(req->body, bytes, bytes_len);
+// Return whether line is empty, ignoring whitespace chars ' ', \r, \n
+int is_empty_line(char *s) {
+    int slen = strlen(s);
+    for (int i=0; i < slen; i++) {
+        // Not an empty line if non-whitespace char is present.
+        if (s[i] != ' ' && s[i] != '\n' && s[i] != '\r') {
+            return 0;
+        }
+    }
+    return 1;
 }
 
-void httprequest_debugprint(httprequest_s *req) {
-    assert(req->method != NULL);
-    assert(req->uri != NULL);
-    assert(req->version != NULL);
-    assert(req->head != NULL);
-    assert(req->body != NULL);
-
-    printf("method: %s\n", req->method->s);
-    printf("uri: %s\n", req->uri->s);
-    printf("version: %s\n", req->version->s);
-
-    printf("headers_size: %ld\n", req->headers->items_size);
-    printf("headers_len: %ld\n", req->headers->items_len);
-
-    printf("Headers:\n");
-    for (int i=0; i < req->headers->items_len; i++) {
-        printf("%s: %s\n", req->headers->items[i].k->s, (char *)req->headers->items[i].v);
+// Parse one line and cumulatively compile results into parser->req.
+// You can check the state of the parser through the following fields:
+// parser->head_complete   Request Line and Headers complete
+// parser->body_complete   httprequest is complete
+void lkhttprequestparser_parse_line(lkhttprequestparser_s *parser, char *line) {
+    // First line: parse initial request line.
+    if (parser->nlinesread == 0) {
+        parse_request_line(line, parser->req);
+        parser->nlinesread++;
+        return;
     }
-
-    printf("Body:\n");
-    for (int i=0; i < req->body->bytes_len; i++) {
-        putchar(req->body->bytes[i]);
+    if (parser->body_complete) {
+        return;
     }
-    printf("\n");
+    // Discard body lines if no Content-Length specified.
+    if (parser->head_complete && parser->header_content_length == 0) {
+        return;
+    }
+    // Append body line to http request.
+    if (parser->head_complete) {
+        lkbuf_append(parser->req->body, line, strlen(line));
+
+        if (parser->req->body->bytes_len >= parser->header_content_length) {
+            parser->body_complete = 1;
+        }
+        parser->nlinesread++;
+        return;
+    }
+    // Empty CRLF line ends the headers section
+    if (is_empty_line(line)) {
+        parser->head_complete = 1;
+        parser->nlinesread++;
+
+        //$$ Set body_complete if GET or HEAD request regardless of Content-Length?
+        if (parser->header_content_length == 0) {
+            parser->body_complete = 1;
+        }
+        return;
+    }
+    // Header line
+    if (!parser->head_complete) {
+        parse_header_line(parser, line, parser->req);
+        parser->nlinesread++;
+        return;
+    }
 }
+
 
 /** httpresp functions **/
 
-httpresponse_s *httpresponse_new() {
-    httpresponse_s *resp = malloc(sizeof(httpresponse_s));
+lkhttpresponse_s *lkhttpresponse_new() {
+    lkhttpresponse_s *resp = malloc(sizeof(lkhttpresponse_s));
     resp->status = 0;
     resp->statustext = lkstr_new("");
     resp->version = lkstr_new("");
@@ -345,7 +441,7 @@ httpresponse_s *httpresponse_new() {
     return resp;
 }
 
-void httpresponse_free(httpresponse_s *resp) {
+void lkhttpresponse_free(lkhttpresponse_s *resp) {
     lkstr_free(resp->statustext);
     lkstr_free(resp->version);
     lkstringmap_free(resp->headers);
@@ -360,17 +456,17 @@ void httpresponse_free(httpresponse_s *resp) {
     free(resp);
 }
 
-void httpresponse_add_header(httpresponse_s *resp, char *k, char *v) {
+void lkhttpresponse_add_header(lkhttpresponse_s *resp, char *k, char *v) {
     lkstringmap_set(resp->headers, k, lkstr_new(v));
 }
 
-void httpresponse_gen_headbuf(httpresponse_s *resp) {
+void lkhttpresponse_gen_headbuf(lkhttpresponse_s *resp) {
     lkbuf_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
     lkbuf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     lkbuf_append(resp->head, "\r\n", 2);
 }
 
-void httpresponse_debugprint(httpresponse_s *resp) {
+void lkhttpresponse_debugprint(lkhttpresponse_s *resp) {
     assert(resp->statustext != NULL);
     assert(resp->version != NULL);
     assert(resp->headers != NULL);

@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#include "netfuncs.h"
+#include "lknet.h"
 
 // Print the last error message corresponding to errno.
 void print_err(char *s) {
@@ -34,7 +34,7 @@ int is_empty_line(char *s) {
 }
 
 int main(int argc, char *argv[]) {
-    httprequest_s *req = httprequest_new();
+    lkhttprequest_s *req = lkhttprequest_new();
 
     char *lines[] = {
         "GET /path/to/index.html HTTP/1.0\n",
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
     for (int i=0; i < sizeof(lines) / sizeof(char *); i++) {
         // initial line
         if (i == 0) {
-            httprequest_parse_request_line(req, lines[i]);
+            lkhttprequest_parse_request_line(req, lines[i]);
             continue;
         }
 
@@ -73,16 +73,16 @@ int main(int argc, char *argv[]) {
         }
 
         if (!empty_line_parsed) {
-            httprequest_parse_header_line(req, lines[i]);
+            lkhttprequest_parse_header_line(req, lines[i]);
             continue;
         }
 
         // parse message body
-        httprequest_append_body(req, lines[i], strlen(lines[i]));
+        lkhttprequest_append_body(req, lines[i], strlen(lines[i]));
     }
-    httprequest_debugprint(req);
+    lkhttprequest_debugprint(req);
 
-    httprequest_free(req);
+    lkhttprequest_free(req);
     return 0;
 }
 

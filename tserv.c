@@ -15,23 +15,18 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#include "netfuncs.h"
+#include "lknet.h"
 
 #define LISTEN_PORT "5000"
 #define RESPONSE_LINE_MAXSIZE 2048
 
 typedef struct clientctx {
-    int sock;                   // client socket
-    sockbuf_t *sb;              // input buffer for reading lines
-    httprequest_s *req;             // http request received
-    httpresponse_s *resp;           // http response to be sent
-
-    char *partial_line;         // partial line from previous read
-    int nlinesread;             // number of lines read so far
-    int empty_line_parsed;      // flag indicating whether empty line received
-
-
-    struct clientctx *next;     // linked list to next client
+    int sock;                           // client socket
+    lksocketreader_s *sr;               // input buffer for reading lines
+    lkhttprequestparser_s *reqparser;   // parser for httprequest
+    lkstr_s *partial_line;
+    lkhttpresponse_s *resp;             // http response to be sent
+    struct clientctx *next;             // link to next client
 } clientctx_t;
 
 clientctx_t *clientctx_new(int sock);
@@ -41,7 +36,6 @@ void remove_clientctx(clientctx_t **pphead, int sock);
 
 void print_err(char *s);
 void exit_err(char *s);
-int is_empty_line(char *s);
 int ends_with_newline(char *s);
 char *append_string(char *dst, char *s);
 void *addrinfo_sin_addr(struct addrinfo *addr);
@@ -50,7 +44,7 @@ void handle_sigchld(int sig);
 
 void read_request_from_client(int clientfd);
 void process_line(clientctx_t *ctx, char *line);
-httpresponse_s *process_req(httprequest_s *req);
+lkhttpresponse_s *process_req(lkhttprequest_s *req);
 int is_valid_http_method(char *method);
 
 void send_response_to_client(int clientfd);
@@ -173,26 +167,27 @@ int main(int argc, char *argv[]) {
 clientctx_t *clientctx_new(int sock) {
     clientctx_t *ctx = malloc(sizeof(clientctx_t));
     ctx->sock = sock;
-    ctx->sb = sockbuf_new(sock, 0);
-    ctx->req = httprequest_new();
+    ctx->sr = lksocketreader_new(sock, 0);
+    ctx->reqparser = lkhttprequestparser_new();
+    ctx->partial_line = lkstr_new("");
     ctx->resp = NULL;
-    ctx->partial_line = NULL;
-    ctx->nlinesread = 0;
-    ctx->empty_line_parsed = 0;
     ctx->next = NULL;
     return ctx;
 }
 
 void clientctx_free(clientctx_t *ctx) {
-    sockbuf_free(ctx->sb);
-    httprequest_free(ctx->req);
-    if (ctx->resp) httpresponse_free(ctx->resp);
-    if (ctx->partial_line) free(ctx->partial_line);
+    lksocketreader_free(ctx->sr);
+    lkhttprequestparser_free(ctx->reqparser);
+    lkstr_free(ctx->partial_line);
+    if (ctx->resp) {
+        lkhttpresponse_free(ctx->resp);
+    }
 
-    ctx->sb = NULL;
-    ctx->req = NULL;
+    ctx->sr = NULL;
+    ctx->reqparser = NULL;
     ctx->resp = NULL;
     ctx->partial_line = NULL;
+    ctx->next = NULL;
     free(ctx);
 }
 
@@ -254,18 +249,6 @@ void print_err(char *s) {
 void exit_err(char *s) {
     print_err(s);
     exit(1);
-}
-
-// Return whether line is empty, ignoring whitespace chars ' ', \r, \n
-int is_empty_line(char *s) {
-    int slen = strlen(s);
-    for (int i=0; i < slen; i++) {
-        // Not an empty line if non-whitespace char is present.
-        if (s[i] != ' ' && s[i] != '\n' && s[i] != '\r') {
-            return 0;
-        }
-    }
-    return 1;
 }
 
 // Return whether string ends with \n char.
@@ -330,28 +313,26 @@ void read_request_from_client(int clientfd) {
         return;
     }
     assert(ctx->sock == clientfd);
-    assert(ctx->sb->sock == clientfd);
+    assert(ctx->sr->sock == clientfd);
 
     while (1) {
         char buf[1000];
-        int z = sockbuf_readline(ctx->sb, buf, sizeof buf);
+        int z = lksocketreader_readline(ctx->sr, buf, sizeof buf);
         if (z == 0) {
             break;
         }
         if (z == -1) {
-            print_err("sockbuf_readline()");
+            print_err("lksocketreader_readline()");
             break;
         }
         assert(buf[z] == '\0');
 
         // If there's a previous partial line, combine it with current line.
-        if (ctx->partial_line != NULL) {
-            ctx->partial_line = append_string(ctx->partial_line, buf);
-            if (ends_with_newline(ctx->partial_line)) {
-                process_line(ctx, ctx->partial_line);
-
-                free(ctx->partial_line);
-                ctx->partial_line = NULL;
+        if (ctx->partial_line->s_len > 0) {
+            lkstr_append(ctx->partial_line, buf);
+            if (ends_with_newline(ctx->partial_line->s)) {
+                process_line(ctx, ctx->partial_line->s);
+                lkstr_assign(ctx->partial_line, "");
             }
             continue;
         }
@@ -359,7 +340,7 @@ void read_request_from_client(int clientfd) {
         // If current line is only partial line (not newline terminated), remember it for
         // next read.
         if (!ends_with_newline(buf)) {
-            ctx->partial_line = strdup(buf);
+            lkstr_assign(ctx->partial_line, buf);
             continue;
         }
 
@@ -369,40 +350,22 @@ void read_request_from_client(int clientfd) {
 }
 
 void process_line(clientctx_t *ctx, char *line) {
-    if (ctx->nlinesread == 0) {
-        httprequest_parse_request_line(ctx->req, line);
-        ctx->nlinesread++;
-        return;
-    }
-
-    if (is_empty_line(line)) {
-        ctx->empty_line_parsed = 1;
-        ctx->nlinesread++;
-
-        httprequest_s *req = ctx->req;
+    lkhttprequestparser_parse_line(ctx->reqparser, line);
+    if (ctx->reqparser->body_complete) {
+        lkhttprequest_s *req = ctx->reqparser->req;
         printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
             req->method->s, req->uri->s, 200);
 
-        ctx->resp = process_req(ctx->req);
+        ctx->resp = process_req(req);
         if (ctx->resp) {
             FD_SET(ctx->sock, &writefds);
         }
         return;
     }
-
-    if (!ctx->empty_line_parsed) {
-        httprequest_parse_header_line(ctx->req, line);
-        ctx->nlinesread++;
-        return;
-    }
-
-    //$$ receive req Content-Length bytes into body
-    httprequest_append_body(ctx->req, line, strlen(line));
-    ctx->nlinesread++;
 }
 
 // Generate an http response to an http request.
-httpresponse_s *process_req(httprequest_s *req) {
+lkhttpresponse_s *process_req(lkhttprequest_s *req) {
     int z;
 
     static char *html_error_start = 
@@ -413,18 +376,24 @@ httpresponse_s *process_req(httprequest_s *req) {
     static char *html_error_end =
        "</body></html>\n";
 
-//    static char *html_sample =
-//       "<!DOCTYPE html>\n"
-//       "<html>\n"
-//       "<head><title>Little Kitten</title></head>\n"
-//       "<body><h1>Little Kitten webserver</h1>\n"
-//       "<p>Hello Little Kitten!</p>\n"
-//       "</body></html>\n";
+    static char *html_sample =
+       "<!DOCTYPE html>\n"
+       "<html>\n"
+       "<head><title>Little Kitten</title></head>\n"
+       "<body><h1>Little Kitten webserver</h1>\n"
+       "<p>Hello Little Kitten!</p>\n"
+       "</body></html>\n";
 
-    httpresponse_s *resp = httpresponse_new();
+    lkhttpresponse_s *resp = lkhttpresponse_new();
 
     char *method = req->method->s;
     char *uri = req->uri->s;
+
+    //$$ instead of this hack, check index.html, index.html, default.html if exists
+    if (!strcmp(uri, "/")) {
+        uri = "/index.html";
+    }
+
     if (!is_valid_http_method(method)) {
         resp->status = 501;
         lkstr_sprintf(resp->statustext, "Unsupported method ('%s')", method);
@@ -433,16 +402,25 @@ httpresponse_s *process_req(httprequest_s *req) {
         lkbuf_append(resp->body, html_error_start, strlen(html_error_start));
         lkbuf_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext);
         lkbuf_append(resp->body, html_error_end, strlen(html_error_end));
-        httpresponse_gen_headbuf(resp);
+        lkhttpresponse_gen_headbuf(resp);
         return resp;
     }
     if (!strcmp(method, "GET")) {
         resp->status = 200;
         lkstr_assign(resp->statustext, "OK");
         lkstr_assign(resp->version, "HTTP/1.0");
+
+        // /littlekitten sample page
+        if (!strcmp(uri, "/littlekitten")) {
+            lkhttpresponse_add_header(resp, "Content-Type", "text/html");
+            lkbuf_append(resp->body, html_sample, strlen(html_sample));
+            lkhttpresponse_gen_headbuf(resp);
+            return resp;
+        }
+
         lkstr_s *content_type = lkstr_new("");
         lkstr_sprintf(content_type, "text/%s;", fileext(uri));
-        httpresponse_add_header(resp, "Content-Type", content_type->s);
+        lkhttpresponse_add_header(resp, "Content-Type", content_type->s);
         lkstr_free(content_type);
 
         // uri_filepath = current dir + uri
@@ -459,7 +437,7 @@ httpresponse_s *process_req(httprequest_s *req) {
         }
         lkstr_free(uri_filepath);
 
-        httpresponse_gen_headbuf(resp);
+        lkhttpresponse_gen_headbuf(resp);
         return resp;
     }
 
@@ -520,12 +498,7 @@ void close_client(clientctx_t *ctx) {
 
     // Free ctx resources
     close(ctx->sock);
-    sockbuf_free(ctx->sb);
-    httprequest_free(ctx->req);
-    if (ctx->partial_line) {
-        free(ctx->partial_line);
-    }
-    free(ctx);
+    clientctx_free(ctx);
 }
 
 int is_supported_http_method(char *method) {
@@ -551,11 +524,11 @@ void send_response_to_client(int clientfd) {
         return;
     }
     assert(ctx->sock == clientfd);
-    assert(ctx->sb->sock == clientfd);
+    assert(ctx->sr->sock == clientfd);
     assert(ctx->resp != NULL);
     assert(ctx->resp->head != NULL);
 
-    httpresponse_s *resp = ctx->resp;
+    lkhttpresponse_s *resp = ctx->resp;
 
     // Send as much response bytes as the client will receive.
     // Send response head bytes first, then response body bytes.
