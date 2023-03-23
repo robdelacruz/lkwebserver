@@ -53,7 +53,6 @@ lkbuf_s *lkbuf_new(size_t bytes_size);
 void lkbuf_free(lkbuf_s *buf);
 int lkbuf_append(lkbuf_s *buf, char *bytes, size_t len);
 void lkbuf_sprintf(lkbuf_s *buf, const char *fmt, ...);
-void lkbuf_asprintf(lkbuf_s *buf, const char *fmt, ...);
 
 #endif
 

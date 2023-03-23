@@ -45,11 +45,12 @@ int lkbuf_append(lkbuf_s *buf, char *bytes, size_t len) {
     return 0;
 }
 
+#if 0
 // Append to buf using sprintf() to a fixed length space.
 // More efficient as no memory allocation needed, but it will
 // truncate strings longer than BUF_LINE_MAXSIZE.
 #define BUF_LINE_MAXSIZE 2048
-void lkbuf_sprintf(lkbuf_s *buf, const char *fmt, ...) {
+void lkbuf_sprintf_line(lkbuf_s *buf, const char *fmt, ...) {
     char line[BUF_LINE_MAXSIZE];
 
     va_list args;
@@ -69,11 +70,12 @@ void lkbuf_sprintf(lkbuf_s *buf, const char *fmt, ...) {
 
     lkbuf_append(buf, line, strlen(line));
 }
+#endif
 
 // Append to buf using asprintf().
 // Can handle all string lengths without truncating, but less
 // efficient as it allocs/deallocs memory.
-void lkbuf_asprintf(lkbuf_s *buf, const char *fmt, ...) {
+void lkbuf_sprintf(lkbuf_s *buf, const char *fmt, ...) {
     int z;
     char *pstr = NULL;
 
