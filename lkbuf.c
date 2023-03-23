@@ -75,7 +75,7 @@ void lkbuf_sprintf_line(lkbuf_s *buf, const char *fmt, ...) {
 // Append to buf using asprintf().
 // Can handle all string lengths without truncating, but less
 // efficient as it allocs/deallocs memory.
-void lkbuf_sprintf(lkbuf_s *buf, const char *fmt, ...) {
+void lkbuf_append_sprintf(lkbuf_s *buf, const char *fmt, ...) {
     int z;
     char *pstr = NULL;
 

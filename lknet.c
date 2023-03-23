@@ -461,8 +461,8 @@ void lkhttpresponse_add_header(lkhttpresponse_s *resp, char *k, char *v) {
 }
 
 void lkhttpresponse_gen_headbuf(lkhttpresponse_s *resp) {
-    lkbuf_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
-    lkbuf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
+    lkbuf_append_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
+    lkbuf_append_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     lkbuf_append(resp->head, "\r\n", 2);
 }
 

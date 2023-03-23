@@ -10,7 +10,7 @@
 
 lkstringmap_s *lkstringmap_new() {
     lkstringmap_s *sm = malloc(sizeof(lkstringmap_s));
-    sm->items_size = 10; // start with room for n items
+    sm->items_size = 1; // start with room for n items
     sm->items_len = 0;
     sm->freev_func = NULL;
 
@@ -41,10 +41,6 @@ void lkstringmap_free(lkstringmap_s *sm) {
     free(sm->items);
     sm->items = NULL;
     free(sm);
-}
-
-void lkstringmap_set_freev_func(lkstringmap_s *sm, void (*freefunc)(void*)) {
-    sm->freev_func = freefunc;
 }
 
 void lkstringmap_set(lkstringmap_s *sm, char *ks, void *v) {
@@ -84,3 +80,14 @@ void *lkstringmap_get(lkstringmap_s *sm, char *ks) {
     return NULL;
 }
 
+void lkstringmap_remove(lkstringmap_s *sm, char *ks) {
+    for (int i=0; i < sm->items_len; i++) {
+        if (lkstr_sz_equal(sm->items[i].k, ks)) {
+            int num_items_after = sm->items_len-i-1;
+            memmove(sm->items+i, sm->items+i+1, num_items_after * sizeof(lkstringmap_item_s));
+            memset(sm->items+sm->items_len-1, 0, sizeof(lkstringmap_item_s));
+            sm->items_len--;
+            return;
+        }
+    }
+}

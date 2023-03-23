@@ -400,7 +400,7 @@ lkhttpresponse_s *process_req(lkhttprequest_s *req) {
         lkstr_assign(resp->version, "HTTP/1.0");
 
         lkbuf_append(resp->body, html_error_start, strlen(html_error_start));
-        lkbuf_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext->s);
+        lkbuf_append_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext->s);
         lkbuf_append(resp->body, html_error_end, strlen(html_error_end));
         lkhttpresponse_gen_headbuf(resp);
         return resp;

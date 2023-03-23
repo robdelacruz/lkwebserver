@@ -36,9 +36,9 @@ typedef struct {
 lkstringmap_s *lkstringmap_new();
 lkstringmap_s *lkstringmap_funcs_new(void (*freefunc)(void*));
 void lkstringmap_free(lkstringmap_s *sm);
-void lkstringmap_set_freev_func(lkstringmap_s *sm, void (*freefunc)(void*));
 void lkstringmap_set(lkstringmap_s *sm, char *ks, void *v);
 void *lkstringmap_get(lkstringmap_s *sm, char *ks);
+void lkstringmap_remove(lkstringmap_s *sm, char *ks);
 
 
 /*** lkbuf_s - Dynamic bytes buffer ***/
@@ -52,7 +52,22 @@ typedef struct {
 lkbuf_s *lkbuf_new(size_t bytes_size);
 void lkbuf_free(lkbuf_s *buf);
 int lkbuf_append(lkbuf_s *buf, char *bytes, size_t len);
-void lkbuf_sprintf(lkbuf_s *buf, const char *fmt, ...);
+void lkbuf_append_sprintf(lkbuf_s *buf, const char *fmt, ...);
+
+
+/*** lkstringlist_s ***/
+typedef struct {
+    lkstr_s **items;
+    size_t items_len;
+    size_t items_size;
+} lkstringlist_s;
+
+lkstringlist_s *lkstringlist_new();
+void lkstringlist_free(lkstringlist_s *sl);
+void lkstringlist_append(lkstringlist_s *sl, char *s);
+void lkstringlist_append_sprintf(lkstringlist_s *sl, const char *fmt, ...);
+lkstr_s *lkstringlist_get(lkstringlist_s *sl, unsigned int i);
+void lkstringlist_remove(lkstringlist_s *sl, unsigned int i);
 
 #endif
 

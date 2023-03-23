@@ -9,11 +9,13 @@
 void lkstr_test();
 void lkstringmap_test();
 void lkbuf_test();
+void lkstringlist_test();
 
 int main(int argc, char *argv[]) {
     lkstr_test();
     lkstringmap_test();
     lkbuf_test();
+    lkstringlist_test();
     return 0;
 }
 
@@ -76,7 +78,23 @@ void lkstringmap_test() {
 
     lkstringmap_set(sm, "abc", strdup("ABC"));
     lkstringmap_set(sm, "def", strdup("DEF"));
+    lkstringmap_set(sm, "ghi", strdup("GHI"));
+    lkstringmap_set(sm, "hij", strdup("HIJ"));
+    lkstringmap_set(sm, "klm", strdup("KLM"));
+    assert(sm->items_len == 5);
+
+    lkstringmap_remove(sm, "ab");
+    assert(sm->items_len == 5);
+    lkstringmap_remove(sm, "");
+    assert(sm->items_len == 5);
+    lkstringmap_remove(sm, "ghi");
+    assert(sm->items_len == 4);
+    lkstringmap_remove(sm, "klm");
+    assert(sm->items_len == 3);
+    lkstringmap_remove(sm, "hij");
+    lkstringmap_remove(sm, "hij");
     assert(sm->items_len == 2);
+
     lkstringmap_set(sm, "123", strdup("one two three"));
     lkstringmap_set(sm, "  ", strdup("space space"));
     lkstringmap_set(sm, "", strdup("(blank)"));
@@ -143,7 +161,7 @@ void lkbuf_test() {
     lkbuf_append(buf, "12345", 5);
     assert(buf->bytes_len == 5);
     assert(!strncmp(buf->bytes+0, "12345", 5));
-    lkbuf_sprintf(buf, "abc %d def %d", 123, 456);
+    lkbuf_append_sprintf(buf, "abc %d def %d", 123, 456);
     assert(buf->bytes_len == 20);
     assert(!strncmp(buf->bytes+5, "abc 123", 7));
     assert(!strncmp(buf->bytes+5+8, "def 456", 7));
@@ -153,12 +171,60 @@ void lkbuf_test() {
     lkbuf_append(buf, "12345", 5);
     assert(buf->bytes_len == 5);
     assert(!strncmp(buf->bytes+0, "12345", 5));
-    lkbuf_asprintf(buf, "abc %d def %d", 123, 456);
+    lkbuf_append_sprintf(buf, "abc %d def %d", 123, 456);
     assert(buf->bytes_len == 20);
     assert(!strncmp(buf->bytes+5, "abc 123", 7));
     assert(!strncmp(buf->bytes+5+8, "def 456", 7));
     lkbuf_free(buf);
 
+    printf("Done.\n");
+}
+
+void lkstringlist_test() {
+    lkstringlist_s *sl;
+
+    printf("Running lkstringlist_s tests... ");
+    sl = lkstringlist_new();
+    assert(sl->items_len == 0);
+    lkstringlist_append(sl, "abc");
+    lkstringlist_append_sprintf(sl, "Hello %s", "abc");
+    lkstringlist_append(sl, "123");
+    assert(sl->items_len == 3);
+
+    lkstr_s *s0 = lkstringlist_get(sl, 0);
+    lkstr_s *s1 = lkstringlist_get(sl, 1);
+    lkstr_s *s2 = lkstringlist_get(sl, 2);
+    lkstr_s *s3 = lkstringlist_get(sl, 3);
+    assert(s0 != NULL);
+    assert(s1 != NULL);
+    assert(s2 != NULL);
+    assert(s3 == NULL);
+    assert(!strcmp(s0->s, "abc"));
+    assert(!strcmp(s1->s, "Hello abc"));
+    assert(!strcmp(s2->s, "123"));
+
+    lkstringlist_remove(sl, 0); // remove "abc"
+    assert(sl->items_len == 2);
+    s0 = lkstringlist_get(sl, 0);
+    s1 = lkstringlist_get(sl, 1);
+    s2 = lkstringlist_get(sl, 2);
+    assert(s0 != NULL);
+    assert(s1 != NULL);
+    assert(s2 == NULL);
+    assert(!strcmp(s0->s, "Hello abc"));
+    assert(!strcmp(s1->s, "123"));
+
+    lkstringlist_remove(sl, 1); // remove "123"
+    assert(sl->items_len == 1);
+    s0 = lkstringlist_get(sl, 0);
+    s1 = lkstringlist_get(sl, 1);
+    s2 = lkstringlist_get(sl, 2);
+    assert(s0 != NULL);
+    assert(s1 == NULL);
+    assert(s2 == NULL);
+    assert(!strcmp(s0->s, "Hello abc"));
+
+    lkstringlist_free(sl);
     printf("Done.\n");
 }
 
