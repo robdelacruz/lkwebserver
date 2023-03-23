@@ -13,9 +13,12 @@ void zero_s(lkstr_s *lks) {
 }
 
 lkstr_s *lkstr_new(char *s) {
-    lkstr_s *lks = malloc(sizeof(lkstr_s));
-
+    if (s == NULL) {
+        s = "";
+    }
     size_t s_len = strlen(s);
+
+    lkstr_s *lks = malloc(sizeof(lkstr_s));
     lks->s_len = s_len;
     lks->s_size = s_len;
     lks->s = malloc(lks->s_size+1);

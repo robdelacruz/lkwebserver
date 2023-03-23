@@ -3,7 +3,7 @@
 
 #include "lklib.h"
 
-/*** httpreq_t - HTTP Request struct ***/
+/*** httprequest_s - HTTP Request struct ***/
 typedef struct {
     lkstr_s *method;       // GET
     lkstr_s *uri;          // /path/to/index.html
@@ -11,17 +11,18 @@ typedef struct {
     lkstringmap_s *headers;
     lkbuf_s *head;
     lkbuf_s *body;
-} httpreq_t;
+} httprequest_s;
 
-httpreq_t *httpreq_new();
-void httpreq_free(httpreq_t *req);
-void httpreq_parse_request_line(httpreq_t *req, char *line);
-void httpreq_parse_header_line(httpreq_t *req, char *line);
-void httpreq_add_header(httpreq_t *req, char *k, char *v);
-void httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len);
-void httpreq_debugprint(httpreq_t *req);
+httprequest_s *httprequest_new();
+void httprequest_free(httprequest_s *req);
+void httprequest_parse_request_line(httprequest_s *req, char *line);
+void httprequest_parse_header_line(httprequest_s *req, char *line);
+void httprequest_add_header(httprequest_s *req, char *k, char *v);
+void httprequest_append_body(httprequest_s *req, char *bytes, int bytes_len);
+void httprequest_debugprint(httprequest_s *req);
 
-/*** httpresp_t - HTTP Response struct ***/
+
+/*** httpresponse_s - HTTP Response struct ***/
 typedef struct {
     int status;             // 404
     lkstr_s *statustext;    // File not found
@@ -29,13 +30,13 @@ typedef struct {
     lkstringmap_s *headers;
     lkbuf_s *head;
     lkbuf_s *body;
-} httpresp_t;
+} httpresponse_s;
 
-httpresp_t *httpresp_new();
-void httpresp_free(httpresp_t *resp);
-void httpresp_add_header(httpresp_t *resp, char *k, char *v);
-void httpresp_gen_headbuf(httpresp_t *resp);
-void httpresp_debugprint(httpresp_t *resp);
+httpresponse_s *httpresponse_new();
+void httpresponse_free(httpresponse_s *resp);
+void httpresponse_add_header(httpresponse_s *resp, char *k, char *v);
+void httpresponse_gen_headbuf(httpresponse_s *resp);
+void httpresponse_debugprint(httpresponse_s *resp);
 
 
 /*** sockbuf_t - Buffered input for sockets ***/

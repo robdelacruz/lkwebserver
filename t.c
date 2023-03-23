@@ -34,7 +34,7 @@ int is_empty_line(char *s) {
 }
 
 int main(int argc, char *argv[]) {
-    httpreq_t *req = httpreq_new();
+    httprequest_s *req = httprequest_new();
 
     char *lines[] = {
         "GET /path/to/index.html HTTP/1.0\n",
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
     for (int i=0; i < sizeof(lines) / sizeof(char *); i++) {
         // initial line
         if (i == 0) {
-            httpreq_parse_request_line(req, lines[i]);
+            httprequest_parse_request_line(req, lines[i]);
             continue;
         }
 
@@ -73,16 +73,16 @@ int main(int argc, char *argv[]) {
         }
 
         if (!empty_line_parsed) {
-            httpreq_parse_header_line(req, lines[i]);
+            httprequest_parse_header_line(req, lines[i]);
             continue;
         }
 
         // parse message body
-        httpreq_append_body(req, lines[i], strlen(lines[i]));
+        httprequest_append_body(req, lines[i], strlen(lines[i]));
     }
-    httpreq_debugprint(req);
+    httprequest_debugprint(req);
 
-    httpreq_free(req);
+    httprequest_free(req);
     return 0;
 }
 

@@ -208,8 +208,8 @@ void sockbuf_debugprint(sockbuf_t *sb) {
 
 
 /*** httpreq functions ***/
-httpreq_t *httpreq_new() {
-    httpreq_t *req = malloc(sizeof(httpreq_t));
+httprequest_s *httprequest_new() {
+    httprequest_s *req = malloc(sizeof(httprequest_s));
     req->method = lkstr_new("");
     req->uri = lkstr_new("");
     req->version = lkstr_new("");
@@ -219,7 +219,7 @@ httpreq_t *httpreq_new() {
     return req;
 }
 
-void httpreq_free(httpreq_t *req) {
+void httprequest_free(httprequest_s *req) {
     lkstr_free(req->method);
     lkstr_free(req->uri);
     lkstr_free(req->version);
@@ -238,7 +238,7 @@ void httpreq_free(httpreq_t *req) {
 
 // Parse initial request line
 // Ex. GET /path/to/index.html HTTP/1.0
-void httpreq_parse_request_line(httpreq_t *req, char *line) {
+void httprequest_parse_request_line(httprequest_s *req, char *line) {
     char *toks[3];
     int ntoksread = 0;
 
@@ -271,13 +271,13 @@ void httpreq_parse_request_line(httpreq_t *req, char *line) {
     free(linetmp);
 }
 
-void httpreq_add_header(httpreq_t *req, char *k, char *v) {
+void httprequest_add_header(httprequest_s *req, char *k, char *v) {
     lkstringmap_set(req->headers, k, lkstr_new(v));
 }
 
 // Parse header line
 // Ex. User-Agent: browser
-void httpreq_parse_header_line(httpreq_t *req, char *line) {
+void httprequest_parse_header_line(httprequest_s *req, char *line) {
     char *saveptr;
     char *delim = ":";
 
@@ -297,16 +297,16 @@ void httpreq_parse_header_line(httpreq_t *req, char *line) {
     while (*v == ' ' || *v == '\t') {
         v++;
     }
-    httpreq_add_header(req, k, v);
+    httprequest_add_header(req, k, v);
 
     free(linetmp);
 }
 
-void httpreq_append_body(httpreq_t *req, char *bytes, int bytes_len) {
+void httprequest_append_body(httprequest_s *req, char *bytes, int bytes_len) {
     lkbuf_append(req->body, bytes, bytes_len);
 }
 
-void httpreq_debugprint(httpreq_t *req) {
+void httprequest_debugprint(httprequest_s *req) {
     assert(req->method != NULL);
     assert(req->uri != NULL);
     assert(req->version != NULL);
@@ -334,8 +334,8 @@ void httpreq_debugprint(httpreq_t *req) {
 
 /** httpresp functions **/
 
-httpresp_t *httpresp_new() {
-    httpresp_t *resp = malloc(sizeof(httpresp_t));
+httpresponse_s *httpresponse_new() {
+    httpresponse_s *resp = malloc(sizeof(httpresponse_s));
     resp->status = 0;
     resp->statustext = lkstr_new("");
     resp->version = lkstr_new("");
@@ -345,7 +345,7 @@ httpresp_t *httpresp_new() {
     return resp;
 }
 
-void httpresp_free(httpresp_t *resp) {
+void httpresponse_free(httpresponse_s *resp) {
     lkstr_free(resp->statustext);
     lkstr_free(resp->version);
     lkstringmap_free(resp->headers);
@@ -360,17 +360,17 @@ void httpresp_free(httpresp_t *resp) {
     free(resp);
 }
 
-void httpresp_add_header(httpresp_t *resp, char *k, char *v) {
+void httpresponse_add_header(httpresponse_s *resp, char *k, char *v) {
     lkstringmap_set(resp->headers, k, lkstr_new(v));
 }
 
-void httpresp_gen_headbuf(httpresp_t *resp) {
+void httpresponse_gen_headbuf(httpresponse_s *resp) {
     lkbuf_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
     lkbuf_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     lkbuf_append(resp->head, "\r\n", 2);
 }
 
-void httpresp_debugprint(httpresp_t *resp) {
+void httpresponse_debugprint(httpresponse_s *resp) {
     assert(resp->statustext != NULL);
     assert(resp->version != NULL);
     assert(resp->headers != NULL);

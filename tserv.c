@@ -23,8 +23,8 @@
 typedef struct clientctx {
     int sock;                   // client socket
     sockbuf_t *sb;              // input buffer for reading lines
-    httpreq_t *req;             // http request received
-    httpresp_t *resp;           // http response to be sent
+    httprequest_s *req;             // http request received
+    httpresponse_s *resp;           // http response to be sent
 
     char *partial_line;         // partial line from previous read
     int nlinesread;             // number of lines read so far
@@ -50,7 +50,7 @@ void handle_sigchld(int sig);
 
 void read_request_from_client(int clientfd);
 void process_line(clientctx_t *ctx, char *line);
-httpresp_t *process_req(httpreq_t *req);
+httpresponse_s *process_req(httprequest_s *req);
 int is_valid_http_method(char *method);
 
 void send_response_to_client(int clientfd);
@@ -174,7 +174,7 @@ clientctx_t *clientctx_new(int sock) {
     clientctx_t *ctx = malloc(sizeof(clientctx_t));
     ctx->sock = sock;
     ctx->sb = sockbuf_new(sock, 0);
-    ctx->req = httpreq_new();
+    ctx->req = httprequest_new();
     ctx->resp = NULL;
     ctx->partial_line = NULL;
     ctx->nlinesread = 0;
@@ -185,8 +185,8 @@ clientctx_t *clientctx_new(int sock) {
 
 void clientctx_free(clientctx_t *ctx) {
     sockbuf_free(ctx->sb);
-    httpreq_free(ctx->req);
-    if (ctx->resp) httpresp_free(ctx->resp);
+    httprequest_free(ctx->req);
+    if (ctx->resp) httpresponse_free(ctx->resp);
     if (ctx->partial_line) free(ctx->partial_line);
 
     ctx->sb = NULL;
@@ -370,7 +370,7 @@ void read_request_from_client(int clientfd) {
 
 void process_line(clientctx_t *ctx, char *line) {
     if (ctx->nlinesread == 0) {
-        httpreq_parse_request_line(ctx->req, line);
+        httprequest_parse_request_line(ctx->req, line);
         ctx->nlinesread++;
         return;
     }
@@ -379,7 +379,7 @@ void process_line(clientctx_t *ctx, char *line) {
         ctx->empty_line_parsed = 1;
         ctx->nlinesread++;
 
-        httpreq_t *req = ctx->req;
+        httprequest_s *req = ctx->req;
         printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
             req->method->s, req->uri->s, 200);
 
@@ -391,18 +391,18 @@ void process_line(clientctx_t *ctx, char *line) {
     }
 
     if (!ctx->empty_line_parsed) {
-        httpreq_parse_header_line(ctx->req, line);
+        httprequest_parse_header_line(ctx->req, line);
         ctx->nlinesread++;
         return;
     }
 
     //$$ receive req Content-Length bytes into body
-    httpreq_append_body(ctx->req, line, strlen(line));
+    httprequest_append_body(ctx->req, line, strlen(line));
     ctx->nlinesread++;
 }
 
 // Generate an http response to an http request.
-httpresp_t *process_req(httpreq_t *req) {
+httpresponse_s *process_req(httprequest_s *req) {
     int z;
 
     static char *html_error_start = 
@@ -421,7 +421,7 @@ httpresp_t *process_req(httpreq_t *req) {
 //       "<p>Hello Little Kitten!</p>\n"
 //       "</body></html>\n";
 
-    httpresp_t *resp = httpresp_new();
+    httpresponse_s *resp = httpresponse_new();
 
     char *method = req->method->s;
     char *uri = req->uri->s;
@@ -433,7 +433,7 @@ httpresp_t *process_req(httpreq_t *req) {
         lkbuf_append(resp->body, html_error_start, strlen(html_error_start));
         lkbuf_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext);
         lkbuf_append(resp->body, html_error_end, strlen(html_error_end));
-        httpresp_gen_headbuf(resp);
+        httpresponse_gen_headbuf(resp);
         return resp;
     }
     if (!strcmp(method, "GET")) {
@@ -442,24 +442,24 @@ httpresp_t *process_req(httpreq_t *req) {
         lkstr_assign(resp->version, "HTTP/1.0");
         lkstr_s *content_type = lkstr_new("");
         lkstr_sprintf(content_type, "text/%s;", fileext(uri));
-        httpresp_add_header(resp, "Content-Type", content_type->s);
+        httpresponse_add_header(resp, "Content-Type", content_type->s);
         lkstr_free(content_type);
 
-        char *uri_filepath = get_current_dir_name();
-        if (uri_filepath == NULL) {
-            uri_filepath = strdup("");
-        }
-        // "/path/to" + "/index.html"
-        uri_filepath = astrncat(uri_filepath, uri, strlen(uri));
-        printf("uri_filepath: %s\n", uri_filepath);
+        // uri_filepath = current dir + uri
+        // Ex. "/path/to" + "/index.html"
+        char *tmp_currentdir = get_current_dir_name();
+        lkstr_s *uri_filepath = lkstr_new(tmp_currentdir);
+        lkstr_append(uri_filepath, uri);
+        free(tmp_currentdir);
 
-        z = readfile(uri_filepath, resp->body);
+        printf("uri_filepath: %s\n", uri_filepath->s);
+        z = readfile(uri_filepath->s, resp->body);
         if (z == -1) {
             print_err("readfile()");
         }
-        free(uri_filepath);
+        lkstr_free(uri_filepath);
 
-        httpresp_gen_headbuf(resp);
+        httpresponse_gen_headbuf(resp);
         return resp;
     }
 
@@ -521,7 +521,7 @@ void close_client(clientctx_t *ctx) {
     // Free ctx resources
     close(ctx->sock);
     sockbuf_free(ctx->sb);
-    httpreq_free(ctx->req);
+    httprequest_free(ctx->req);
     if (ctx->partial_line) {
         free(ctx->partial_line);
     }
@@ -555,7 +555,7 @@ void send_response_to_client(int clientfd) {
     assert(ctx->resp != NULL);
     assert(ctx->resp->head != NULL);
 
-    httpresp_t *resp = ctx->resp;
+    httpresponse_s *resp = ctx->resp;
 
     // Send as much response bytes as the client will receive.
     // Send response head bytes first, then response body bytes.
