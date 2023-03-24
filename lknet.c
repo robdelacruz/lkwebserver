@@ -35,12 +35,11 @@ void set_sock_nonblocking(int sock) {
     fcntl(sock, F_SETFL, O_NONBLOCK);
 }
 
-// Receive count bytes into buf.
-// Returns num bytes received or -1 for error.
-ssize_t sock_recv(int sock, char *buf, size_t count) {
-    memset(buf, '*', count); // initialize for debugging purposes.
-
-    int nread = 0;
+// Receive count bytes into buf nonblocking.
+// Returns 0 for success, -1 for error.
+// On return, ret_nread contains the number of bytes received.
+int sock_recv(int sock, char *buf, size_t count, size_t *ret_nread) {
+    size_t nread = 0;
     while (nread < count) {
         int z = recv(sock, buf+nread, count-nread, MSG_DONTWAIT);
         // socket closed, no more data
@@ -51,46 +50,42 @@ ssize_t sock_recv(int sock, char *buf, size_t count) {
         if (z == -1 && errno == EINTR) {
             continue;
         }
-        // no data available at the moment, just return what we have.
-        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            break;
-        }
-        // any other error
         if (z == -1) {
-            return z;
+            // errno is set to EAGAIN/EWOULDBLOCK if socket is blocked
+            // errno is set to EPIPE if socket was shutdown
+            *ret_nread = nread;
+            return -1;
         }
         nread += z;
     }
-    return nread;
+    *ret_nread = nread;
+    return 0;
 }
 
-// Send count buf bytes into sock.
-// Returns num bytes sent or -1 for error, -2 for socket closed
-ssize_t sock_send(int sock, char *buf, size_t count) {
+// Send count buf bytes into sock nonblocking.
+// Returns 0 for success, -1 for error.
+// On return, ret_nsent contains the number of bytes sent.
+int sock_send(int sock, char *buf, size_t count, size_t *ret_nsent) {
     int nsent = 0;
     while (nsent < count) {
         int z = send(sock, buf+nsent, count-nsent, MSG_DONTWAIT);
-        // socket closed, no more data
         if (z == 0) {
-            // socket closed
-            //$$ Better way to return 'socket closed' status?
-            return -2;
+            break;
         }
         // interrupt occured during send, retry send.
         if (z == -1 && errno == EINTR) {
             continue;
         }
-        // no data available at the moment, just return what we have.
-        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            break;
-        }
-        // any other error
         if (z == -1) {
-            return z;
+            // errno is set to EAGAIN/EWOULDBLOCK if socket is blocked
+            // errno is set to EPIPE if socket was shutdown
+            *ret_nsent = nsent;
+            return -1;
         }
         nsent += z;
     }
-    return nsent;
+    *ret_nsent = nsent;
+    return 0;
 }
 
 /** lksocketreader functions **/

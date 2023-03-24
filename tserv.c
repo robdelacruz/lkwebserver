@@ -46,9 +46,11 @@ void read_request_from_client(int clientfd);
 void process_line(clientctx_t *ctx, char *line);
 lkhttpresponse_s *process_req(lkhttprequest_s *req);
 int is_valid_http_method(char *method);
+char *fileext(char *filepath);
 
 void send_response_to_client(int clientfd);
-char *fileext(char *filepath);
+void send_buf_bytes(int sock, lkbuf_s *buf);
+void terminate_client_session(int clientfd);
 
 clientctx_t *ctxhead = NULL;
 fd_set readfds;
@@ -533,45 +535,50 @@ void send_response_to_client(int clientfd) {
     // Send as much response bytes as the client will receive.
     // Send response head bytes first, then response body bytes.
     if (resp->head->bytes_cur < resp->head->bytes_len) {
-        // send resphead
-        int z = sock_send(ctx->sock,
-            resp->head->bytes + resp->head->bytes_cur,
-            resp->head->bytes_len - resp->head->bytes_cur);
-        if (z == -1) {
-            return;
-        }
-        if (z == -2) {
-            FD_CLR(ctx->sock, &writefds);
-            remove_clientctx(&ctxhead, ctx->sock);
-            return;
-        }
-        resp->head->bytes_cur += z;
+        send_buf_bytes(ctx->sock, resp->head);
     } else if (resp->body->bytes_cur < resp->body->bytes_len) {
-        // send resp body
-        int z = sock_send(ctx->sock,
-            resp->body->bytes + resp->body->bytes_cur,
-            resp->body->bytes_len - resp->body->bytes_cur);
-        if (z == -1) {
-            return;
-        }
-        if (z == -2) {
-            FD_CLR(ctx->sock, &writefds);
-            remove_clientctx(&ctxhead, ctx->sock);
-            return;
-        }
-        resp->body->bytes_cur += z;
+        send_buf_bytes(ctx->sock, resp->body);
     } else {
-        FD_CLR(ctx->sock, &readfds);
-        FD_CLR(ctx->sock, &writefds);
-        int z= shutdown(ctx->sock, SHUT_RDWR);
-        if (z == -1) {
-            print_err("shutdown()");
-        }
-        z = close(ctx->sock);
-        if (z == -1) {
-            print_err("close()");
-        }
-        remove_clientctx(&ctxhead, ctx->sock);
+        // Completed sending http response.
+        terminate_client_session(ctx->sock);
     }
 }
+
+// Send buf data into sock, keeping track of last buffer position.
+// Used to cumulatively send buffer data with multiple sends.
+void send_buf_bytes(int sock, lkbuf_s *buf) {
+    size_t nsent = 0;
+    int z = sock_send(sock,
+        buf->bytes + buf->bytes_cur,
+        buf->bytes_len - buf->bytes_cur,
+        &nsent);
+    if (z == -1 && errno == EPIPE) {
+        // client socket was shutdown
+        terminate_client_session(sock);
+        return;
+    }
+    buf->bytes_cur += nsent;
+}
+
+// Disconnect from client.
+void terminate_client_session(int clientfd) {
+    printf("terminate_client fd %d\n", clientfd);
+
+    // Remove select() read and write I/O
+    FD_CLR(clientfd, &readfds);
+    FD_CLR(clientfd, &writefds);
+
+    // Close read and writes.
+    int z= shutdown(clientfd, SHUT_RDWR);
+    if (z == -1) {
+        print_err("shutdown()");
+    }
+    z = close(clientfd);
+    if (z == -1) {
+        print_err("close()");
+    }
+    // Remove client from clientctx list.
+    remove_clientctx(&ctxhead, clientfd);
+}
+
 

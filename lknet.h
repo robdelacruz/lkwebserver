@@ -69,8 +69,8 @@ void lkhttprequestparser_parse_line(lkhttprequestparser_s *parser, char *line);
 
 
 /*** socket helper functions ***/
-ssize_t sock_recv(int sock, char *buf, size_t count);
-ssize_t sock_send(int sock, char *buf, size_t count);
+int sock_recv(int sock, char *buf, size_t count, size_t *ret_nread);
+int sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
 void set_sock_timeout(int sock, int nsecs, int ms);
 void set_sock_nonblocking(int sock);
 
