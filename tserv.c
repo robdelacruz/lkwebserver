@@ -44,7 +44,7 @@ void handle_sigchld(int sig);
 
 void read_request_from_client(int clientfd);
 void process_line(clientctx_t *ctx, char *line);
-LKHttpResponse *process_req(LKHttpRequest *req);
+void process_req(LKHttpRequest *req, LKHttpResponse *resp);
 int is_valid_http_method(char *method);
 char *fileext(char *filepath);
 
@@ -52,9 +52,13 @@ void send_response_to_client(int clientfd);
 void send_buf_bytes(int sock, LKBuffer *buf);
 void terminate_client_session(int clientfd);
 
+void serve_file_handler(LKHttpRequest *req, LKHttpResponse *resp);
+
 clientctx_t *ctxhead = NULL;
 fd_set readfds;
 fd_set writefds;
+
+lk_http_handler_func default_handler = serve_file_handler;
 
 int main(int argc, char *argv[]) {
     int z;
@@ -358,16 +362,23 @@ void process_line(clientctx_t *ctx, char *line) {
         printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
             req->method->s, req->uri->s, 200);
 
-        ctx->resp = process_req(req);
-        if (ctx->resp) {
-            FD_SET(ctx->sock, &writefds);
+        ctx->resp = lk_httpresponse_new();
+        if (default_handler) {
+            (*default_handler)(req, ctx->resp);
+        } else {
+            // If no handler, return default 200 OK response.
+            ctx->resp->status = 200;
+            lk_string_assign(ctx->resp->statustext, "Default OK");
+            lk_string_assign(ctx->resp->version, "HTTP/1.0");
+            lk_httpresponse_gen_headbuf(ctx->resp);
         }
+        FD_SET(ctx->sock, &writefds);
         return;
     }
 }
 
 // Generate an http response to an http request.
-LKHttpResponse *process_req(LKHttpRequest *req) {
+void serve_file_handler(LKHttpRequest *req, LKHttpResponse *resp) {
     int z;
 
     static char *html_error_start = 
@@ -386,8 +397,6 @@ LKHttpResponse *process_req(LKHttpRequest *req) {
        "<p>Hello Little Kitten!</p>\n"
        "</body></html>\n";
 
-    LKHttpResponse *resp = lk_httpresponse_new();
-
     char *method = req->method->s;
     char *uri = req->uri->s;
 
@@ -405,7 +414,7 @@ LKHttpResponse *process_req(LKHttpRequest *req) {
         lk_buffer_append_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext->s);
         lk_buffer_append(resp->body, html_error_end, strlen(html_error_end));
         lk_httpresponse_gen_headbuf(resp);
-        return resp;
+        return;
     }
     if (!strcmp(method, "GET")) {
         resp->status = 200;
@@ -417,7 +426,7 @@ LKHttpResponse *process_req(LKHttpRequest *req) {
             lk_httpresponse_add_header(resp, "Content-Type", "text/html");
             lk_buffer_append(resp->body, html_sample, strlen(html_sample));
             lk_httpresponse_gen_headbuf(resp);
-            return resp;
+            return;
         }
 
         LKString *content_type = lk_string_new("");
@@ -440,10 +449,14 @@ LKHttpResponse *process_req(LKHttpRequest *req) {
         lk_string_free(uri_filepath);
 
         lk_httpresponse_gen_headbuf(resp);
-        return resp;
+        return;
     }
 
-    return NULL;
+    // Return default response 200 OK.
+    resp->status = 200;
+    lk_string_assign(resp->statustext, "Default OK");
+    lk_string_assign(resp->version, "HTTP/1.0");
+    lk_httpresponse_gen_headbuf(resp);
 }
 
 int is_valid_http_method(char *method) {

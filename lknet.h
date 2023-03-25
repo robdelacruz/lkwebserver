@@ -36,6 +36,8 @@ void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v);
 void lk_httpresponse_gen_headbuf(LKHttpResponse *resp);
 void lk_httpresponse_debugprint(LKHttpResponse *resp);
 
+typedef void (*lk_http_handler_func)(LKHttpRequest *req, LKHttpResponse *resp);
+
 
 /*** LKSocketReader - Buffered input for sockets ***/
 typedef struct {
