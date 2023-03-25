@@ -3,41 +3,41 @@
 
 #include "lklib.h"
 
-/*** lkhttprequest_s - HTTP Request struct ***/
+/*** LKHttpRequest - HTTP Request struct ***/
 typedef struct {
-    lkstr_s *method;       // GET
-    lkstr_s *uri;          // /path/to/index.html
-    lkstr_s *version;      // HTTP/1.0
-    lkstringmap_s *headers;
-    lkbuf_s *head;
-    lkbuf_s *body;
-} lkhttprequest_s;
+    LKString *method;       // GET
+    LKString *uri;          // /path/to/index.html
+    LKString *version;      // HTTP/1.0
+    LKStringMap *headers;
+    LKBuffer *head;
+    LKBuffer *body;
+} LKHttpRequest;
 
-lkhttprequest_s *lkhttprequest_new();
-void lkhttprequest_free(lkhttprequest_s *req);
-void lkhttprequest_add_header(lkhttprequest_s *req, char *k, char *v);
-void lkhttprequest_append_body(lkhttprequest_s *req, char *bytes, int bytes_len);
-void lkhttprequest_debugprint(lkhttprequest_s *req);
+LKHttpRequest *lk_httprequest_new();
+void lk_httprequest_free(LKHttpRequest *req);
+void lk_httprequest_add_header(LKHttpRequest *req, char *k, char *v);
+void lk_httprequest_append_body(LKHttpRequest *req, char *bytes, int bytes_len);
+void lk_httprequest_debugprint(LKHttpRequest *req);
 
 
-/*** lkhttpresponse_s - HTTP Response struct ***/
+/*** LKHttpResponse - HTTP Response struct ***/
 typedef struct {
     int status;             // 404
-    lkstr_s *statustext;    // File not found
-    lkstr_s *version;       // HTTP/1.0
-    lkstringmap_s *headers;
-    lkbuf_s *head;
-    lkbuf_s *body;
-} lkhttpresponse_s;
+    LKString *statustext;    // File not found
+    LKString *version;       // HTTP/1.0
+    LKStringMap *headers;
+    LKBuffer *head;
+    LKBuffer *body;
+} LKHttpResponse;
 
-lkhttpresponse_s *lkhttpresponse_new();
-void lkhttpresponse_free(lkhttpresponse_s *resp);
-void lkhttpresponse_add_header(lkhttpresponse_s *resp, char *k, char *v);
-void lkhttpresponse_gen_headbuf(lkhttpresponse_s *resp);
-void lkhttpresponse_debugprint(lkhttpresponse_s *resp);
+LKHttpResponse *lk_httpresponse_new();
+void lk_httpresponse_free(LKHttpResponse *resp);
+void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v);
+void lk_httpresponse_gen_headbuf(LKHttpResponse *resp);
+void lk_httpresponse_debugprint(LKHttpResponse *resp);
 
 
-/*** lksocketreader_s - Buffered input for sockets ***/
+/*** LKSocketReader - Buffered input for sockets ***/
 typedef struct {
     int sock;
     char *buf;
@@ -45,27 +45,27 @@ typedef struct {
     size_t buf_len;
     unsigned int next_read_pos;
     int sockclosed;
-} lksocketreader_s;
+} LKSocketReader;
 
-lksocketreader_s *lksocketreader_new(int sock, size_t initial_size);
-void lksocketreader_free(lksocketreader_s *sr);
-ssize_t lksocketreader_readline(lksocketreader_s *sr, char *dst, size_t dst_len);
-void lksocketreader_debugprint(lksocketreader_s *sr);
+LKSocketReader *lk_socketreader_new(int sock, size_t initial_size);
+void lk_socketreader_free(LKSocketReader *sr);
+ssize_t lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len);
+void lk_socketreader_debugprint(LKSocketReader *sr);
 
 
-/*** lkhttprequestparser_s ***/
+/*** LKHttpRequestParser ***/
 typedef struct {
     unsigned int nlinesread;             // number of lines read so far
     unsigned int header_content_length;  // value of previous Content-Length header parsed
     int head_complete;                  // flag indicating header lines complete
     int body_complete;                  // flag indicating request body (if needed) complete
-    lkhttprequest_s *req;               // httprequest to output to while parsing
-} lkhttprequestparser_s;
+    LKHttpRequest *req;               // httprequest to output to while parsing
+} LKHttpRequestParser;
 
-lkhttprequestparser_s *lkhttprequestparser_new();
-void lkhttprequestparser_free(lkhttprequestparser_s *parser);
-void lkhttprequestparser_reset(lkhttprequestparser_s *parser);
-void lkhttprequestparser_parse_line(lkhttprequestparser_s *parser, char *line);
+LKHttpRequestParser *lk_httprequestparser_new();
+void lk_httprequestparser_free(LKHttpRequestParser *parser);
+void lk_httprequestparser_reset(LKHttpRequestParser *parser);
+void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
 
 
 /*** socket helper functions ***/
@@ -78,9 +78,9 @@ void set_sock_nonblocking(int sock);
 // Remove trailing CRLF or LF (\n) from string.
 void chomp(char* s);
 // Read entire file into buf.
-ssize_t readfile(char *filepath, lkbuf_s *buf);
+ssize_t readfile(char *filepath, LKBuffer *buf);
 // Read entire file descriptor contents into buf.
-ssize_t readfd(int fd, lkbuf_s *buf);
+ssize_t readfd(int fd, LKBuffer *buf);
 // Append src to dest, allocating new memory in dest if needed.
 // Return new pointer to dest.
 char *astrncat(char *dest, char *src, size_t src_len);

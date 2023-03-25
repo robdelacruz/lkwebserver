@@ -90,8 +90,8 @@ int sock_send(int sock, char *buf, size_t count, size_t *ret_nsent) {
 
 /** lksocketreader functions **/
 
-lksocketreader_s *lksocketreader_new(int sock, size_t buf_size) {
-    lksocketreader_s *sr = malloc(sizeof(lksocketreader_s));
+LKSocketReader *lk_socketreader_new(int sock, size_t buf_size) {
+    LKSocketReader *sr = malloc(sizeof(LKSocketReader));
 
     if (buf_size == 0) {
         buf_size = 1024;
@@ -107,20 +107,16 @@ lksocketreader_s *lksocketreader_new(int sock, size_t buf_size) {
     return sr;
 }
 
-void lksocketreader_free(lksocketreader_s *sr) {
+void lk_socketreader_free(LKSocketReader *sr) {
     free(sr->buf);
     sr->buf = NULL;
 
     free(sr);
 }
 
-int lksocketreader_eof(lksocketreader_s *sr) {
-    return sr->sockclosed;
-}
-
 // Read one line from buffered socket, including the \n char, \0 terminated.
 // Returns num bytes read or -1 for error.
-ssize_t lksocketreader_readline(lksocketreader_s *sr, char *dst, size_t dst_len) {
+ssize_t lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len) {
     assert(dst_len > 2); // Reserve space for \n and \0.
     assert(sr->buf_size >= sr->buf_len);
     assert(sr->buf_len >= sr->next_read_pos);
@@ -192,7 +188,7 @@ void debugprint_buf(char *buf, size_t buf_size) {
     printf("buf_size: %ld\n", buf_size);
 }
 
-void lksocketreader_debugprint(lksocketreader_s *sr) {
+void lk_socketreader_debugprint(LKSocketReader *sr) {
     printf("buf_size: %ld\n", sr->buf_size);
     printf("buf_len: %ld\n", sr->buf_len);
     printf("next_read_pos: %d\n", sr->next_read_pos);
@@ -202,25 +198,25 @@ void lksocketreader_debugprint(lksocketreader_s *sr) {
 }
 
 
-/*** httpreq functions ***/
-lkhttprequest_s *lkhttprequest_new() {
-    lkhttprequest_s *req = malloc(sizeof(lkhttprequest_s));
-    req->method = lkstr_new("");
-    req->uri = lkstr_new("");
-    req->version = lkstr_new("");
-    req->headers = lkstringmap_funcs_new(lkstr_voidp_free);
-    req->head = lkbuf_new(0);
-    req->body = lkbuf_new(0);
+/*** LKHttpRequest functions ***/
+LKHttpRequest *lk_httprequest_new() {
+    LKHttpRequest *req = malloc(sizeof(LKHttpRequest));
+    req->method = lk_string_new("");
+    req->uri = lk_string_new("");
+    req->version = lk_string_new("");
+    req->headers = lk_stringmap_funcs_new(lk_string_voidp_free);
+    req->head = lk_buffer_new(0);
+    req->body = lk_buffer_new(0);
     return req;
 }
 
-void lkhttprequest_free(lkhttprequest_s *req) {
-    lkstr_free(req->method);
-    lkstr_free(req->uri);
-    lkstr_free(req->version);
-    lkstringmap_free(req->headers);
-    lkbuf_free(req->head);
-    lkbuf_free(req->body);
+void lk_httprequest_free(LKHttpRequest *req) {
+    lk_string_free(req->method);
+    lk_string_free(req->uri);
+    lk_string_free(req->version);
+    lk_stringmap_free(req->headers);
+    lk_buffer_free(req->head);
+    lk_buffer_free(req->body);
 
     req->method = NULL;
     req->uri = NULL;
@@ -231,15 +227,15 @@ void lkhttprequest_free(lkhttprequest_s *req) {
     free(req);
 }
 
-void lkhttprequest_add_header(lkhttprequest_s *req, char *k, char *v) {
-    lkstringmap_set(req->headers, k, lkstr_new(v));
+void lk_httprequest_add_header(LKHttpRequest *req, char *k, char *v) {
+    lk_stringmap_set(req->headers, k, lk_string_new(v));
 }
 
-void lkhttprequest_append_body(lkhttprequest_s *req, char *bytes, int bytes_len) {
-    lkbuf_append(req->body, bytes, bytes_len);
+void lk_httprequest_append_body(LKHttpRequest *req, char *bytes, int bytes_len) {
+    lk_buffer_append(req->body, bytes, bytes_len);
 }
 
-void lkhttprequest_debugprint(lkhttprequest_s *req) {
+void lk_httprequest_debugprint(LKHttpRequest *req) {
     assert(req->method != NULL);
     assert(req->uri != NULL);
     assert(req->version != NULL);
@@ -266,37 +262,37 @@ void lkhttprequest_debugprint(lkhttprequest_s *req) {
 }
 
 
-/*** lkhttprequestparser functions ***/
-lkhttprequestparser_s *lkhttprequestparser_new() {
-    lkhttprequestparser_s *parser = malloc(sizeof(lkhttprequestparser_s));
+/*** LKHttpRequestParser functions ***/
+LKHttpRequestParser *lk_httprequestparser_new() {
+    LKHttpRequestParser *parser = malloc(sizeof(LKHttpRequestParser));
     parser->nlinesread = 0;
     parser->header_content_length = 0;
     parser->head_complete = 0;
     parser->body_complete = 0;
-    parser->req = lkhttprequest_new();
+    parser->req = lk_httprequest_new();
     return parser;
 }
 
-void lkhttprequestparser_free(lkhttprequestparser_s *parser) {
-    lkhttprequest_free(parser->req);
+void lk_httprequestparser_free(LKHttpRequestParser *parser) {
+    lk_httprequest_free(parser->req);
     parser->req = NULL;
     free(parser);
 }
 
 // Clear any pending state.
-void lkhttprequestparser_reset(lkhttprequestparser_s *parser) {
+void lk_httprequestparser_reset(LKHttpRequestParser *parser) {
     parser->nlinesread = 0;
     parser->header_content_length = 0;
     parser->head_complete = 0;
     parser->body_complete = 0;
 
-    lkhttprequest_free(parser->req);
-    parser->req = lkhttprequest_new();
+    lk_httprequest_free(parser->req);
+    parser->req = lk_httprequest_new();
 }
 
 // Parse initial request line in the format:
 // GET /path/to/index.html HTTP/1.0
-void parse_request_line(char *line, lkhttprequest_s *req) {
+void parse_request_line(char *line, LKHttpRequest *req) {
     char *toks[3];
     int ntoksread = 0;
 
@@ -322,18 +318,18 @@ void parse_request_line(char *line, lkhttprequest_s *req) {
     if (ntoksread > 1) uri = toks[1];
     if (ntoksread > 2) version = toks[2];
 
-    lkstr_assign(req->method, method);
-    lkstr_assign(req->uri, uri);
-    lkstr_assign(req->version, version);
+    lk_string_assign(req->method, method);
+    lk_string_assign(req->uri, uri);
+    lk_string_assign(req->version, version);
 
     free(linetmp);
 }
 
-void parse_body(char *bodybytes, size_t bodybytes_len, lkhttprequest_s *req) {
+void parse_body(char *bodybytes, size_t bodybytes_len, LKHttpRequest *req) {
 }
 
 // Parse header line in the format Ex. User-Agent: browser
-void parse_header_line(lkhttprequestparser_s *parser, char *line, lkhttprequest_s *req) {
+void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req) {
     char *saveptr;
     char *delim = ":";
 
@@ -353,7 +349,7 @@ void parse_header_line(lkhttprequestparser_s *parser, char *line, lkhttprequest_
     while (*v == ' ' || *v == '\t') {
         v++;
     }
-    lkhttprequest_add_header(req, k, v);
+    lk_httprequest_add_header(req, k, v);
 
     if (!strcasecmp(k, "Content-Length")) {
         int content_length = atoi(v);
@@ -379,7 +375,7 @@ int is_empty_line(char *s) {
 // You can check the state of the parser through the following fields:
 // parser->head_complete   Request Line and Headers complete
 // parser->body_complete   httprequest is complete
-void lkhttprequestparser_parse_line(lkhttprequestparser_s *parser, char *line) {
+void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line) {
     // First line: parse initial request line.
     if (parser->nlinesread == 0) {
         parse_request_line(line, parser->req);
@@ -395,7 +391,7 @@ void lkhttprequestparser_parse_line(lkhttprequestparser_s *parser, char *line) {
     }
     // Append body line to http request.
     if (parser->head_complete) {
-        lkbuf_append(parser->req->body, line, strlen(line));
+        lk_buffer_append(parser->req->body, line, strlen(line));
 
         if (parser->req->body->bytes_len >= parser->header_content_length) {
             parser->body_complete = 1;
@@ -425,23 +421,23 @@ void lkhttprequestparser_parse_line(lkhttprequestparser_s *parser, char *line) {
 
 /** httpresp functions **/
 
-lkhttpresponse_s *lkhttpresponse_new() {
-    lkhttpresponse_s *resp = malloc(sizeof(lkhttpresponse_s));
+LKHttpResponse *lk_httpresponse_new() {
+    LKHttpResponse *resp = malloc(sizeof(LKHttpResponse));
     resp->status = 0;
-    resp->statustext = lkstr_new("");
-    resp->version = lkstr_new("");
-    resp->headers = lkstringmap_funcs_new(lkstr_voidp_free);
-    resp->head = lkbuf_new(0);
-    resp->body = lkbuf_new(0);
+    resp->statustext = lk_string_new("");
+    resp->version = lk_string_new("");
+    resp->headers = lk_stringmap_funcs_new(lk_string_voidp_free);
+    resp->head = lk_buffer_new(0);
+    resp->body = lk_buffer_new(0);
     return resp;
 }
 
-void lkhttpresponse_free(lkhttpresponse_s *resp) {
-    lkstr_free(resp->statustext);
-    lkstr_free(resp->version);
-    lkstringmap_free(resp->headers);
-    lkbuf_free(resp->head);
-    lkbuf_free(resp->body);
+void lk_httpresponse_free(LKHttpResponse *resp) {
+    lk_string_free(resp->statustext);
+    lk_string_free(resp->version);
+    lk_stringmap_free(resp->headers);
+    lk_buffer_free(resp->head);
+    lk_buffer_free(resp->body);
 
     resp->statustext = NULL;
     resp->version = NULL;
@@ -451,17 +447,17 @@ void lkhttpresponse_free(lkhttpresponse_s *resp) {
     free(resp);
 }
 
-void lkhttpresponse_add_header(lkhttpresponse_s *resp, char *k, char *v) {
-    lkstringmap_set(resp->headers, k, lkstr_new(v));
+void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v) {
+    lk_stringmap_set(resp->headers, k, lk_string_new(v));
 }
 
-void lkhttpresponse_gen_headbuf(lkhttpresponse_s *resp) {
-    lkbuf_append_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
-    lkbuf_append_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
-    lkbuf_append(resp->head, "\r\n", 2);
+void lk_httpresponse_gen_headbuf(LKHttpResponse *resp) {
+    lk_buffer_append_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
+    lk_buffer_append_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
+    lk_buffer_append(resp->head, "\r\n", 2);
 }
 
-void lkhttpresponse_debugprint(lkhttpresponse_s *resp) {
+void lk_httpresponse_debugprint(LKHttpResponse *resp) {
     assert(resp->statustext != NULL);
     assert(resp->version != NULL);
     assert(resp->headers != NULL);
@@ -487,7 +483,7 @@ void lkhttpresponse_debugprint(lkhttpresponse_s *resp) {
 }
 
 // Open and read entire file contents into buf.
-ssize_t readfile(char *filepath, lkbuf_s *buf) {
+ssize_t readfile(char *filepath, LKBuffer *buf) {
     int fd = open(filepath, O_RDONLY);
     if (fd == -1) {
         return -1;
@@ -506,7 +502,7 @@ ssize_t readfile(char *filepath, lkbuf_s *buf) {
 
 // Read entire file descriptor contents into buf.
 #define TMPBUF_SIZE 512
-ssize_t readfd(int fd, lkbuf_s *buf) {
+ssize_t readfd(int fd, LKBuffer *buf) {
     char tmpbuf[TMPBUF_SIZE];
 
     int nread = 0;
@@ -521,7 +517,7 @@ ssize_t readfd(int fd, lkbuf_s *buf) {
         if (z == 0) {
             break;
         }
-        lkbuf_append(buf, tmpbuf, z);
+        lk_buffer_append(buf, tmpbuf, z);
         nread += z;
     }
     return nread;

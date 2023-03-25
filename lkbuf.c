@@ -8,12 +8,12 @@
 #include <assert.h>
 #include "lklib.h"
 
-lkbuf_s *lkbuf_new(size_t bytes_size) {
+LKBuffer *lk_buffer_new(size_t bytes_size) {
     if (bytes_size == 0) {
         bytes_size = 10; //$$ specify a default initial size
     }
 
-    lkbuf_s *buf = malloc(sizeof(lkbuf_s));
+    LKBuffer *buf = malloc(sizeof(LKBuffer));
     buf->bytes_cur = 0;
     buf->bytes_len = 0;
     buf->bytes_size = bytes_size;
@@ -21,14 +21,14 @@ lkbuf_s *lkbuf_new(size_t bytes_size) {
     return buf;
 }
 
-void lkbuf_free(lkbuf_s *buf) {
+void lk_buffer_free(LKBuffer *buf) {
     assert(buf->bytes != NULL);
     free(buf->bytes);
     buf->bytes = NULL;
     free(buf);
 }
 
-int lkbuf_append(lkbuf_s *buf, char *bytes, size_t len) {
+int lk_buffer_append(LKBuffer *buf, char *bytes, size_t len) {
     // If not enough capacity to append bytes, expand the bytes buffer.
     if (len > buf->bytes_size - buf->bytes_len) {
         char *bs = realloc(buf->bytes, buf->bytes_size + len);
@@ -50,7 +50,7 @@ int lkbuf_append(lkbuf_s *buf, char *bytes, size_t len) {
 // More efficient as no memory allocation needed, but it will
 // truncate strings longer than BUF_LINE_MAXSIZE.
 #define BUF_LINE_MAXSIZE 2048
-void lkbuf_sprintf_line(lkbuf_s *buf, const char *fmt, ...) {
+void lk_buffer_sprintf_line(LKBuffer *buf, const char *fmt, ...) {
     char line[BUF_LINE_MAXSIZE];
 
     va_list args;
@@ -68,14 +68,14 @@ void lkbuf_sprintf_line(lkbuf_s *buf, const char *fmt, ...) {
         line[z-1] = '\0';
     }
 
-    lkbuf_append(buf, line, strlen(line));
+    lk_buffer_append(buf, line, strlen(line));
 }
 #endif
 
 // Append to buf using asprintf().
 // Can handle all string lengths without truncating, but less
 // efficient as it allocs/deallocs memory.
-void lkbuf_append_sprintf(lkbuf_s *buf, const char *fmt, ...) {
+void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...) {
     int z;
     char *pstr = NULL;
 
@@ -86,7 +86,7 @@ void lkbuf_append_sprintf(lkbuf_s *buf, const char *fmt, ...) {
 
     if (z == -1) return;
 
-    lkbuf_append(buf, pstr, strlen(pstr)); //$$ use z+1 instead of strlen(pstr)?
+    lk_buffer_append(buf, pstr, strlen(pstr)); //$$ use z+1 instead of strlen(pstr)?
 
     free(pstr);
     pstr = NULL;

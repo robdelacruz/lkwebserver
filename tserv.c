@@ -21,12 +21,12 @@
 #define RESPONSE_LINE_MAXSIZE 2048
 
 typedef struct clientctx {
-    int sock;                           // client socket
-    lksocketreader_s *sr;               // input buffer for reading lines
-    lkhttprequestparser_s *reqparser;   // parser for httprequest
-    lkstr_s *partial_line;
-    lkhttpresponse_s *resp;             // http response to be sent
-    struct clientctx *next;             // link to next client
+    int sock;                         // client socket
+    LKSocketReader *sr;               // input buffer for reading lines
+    LKHttpRequestParser *reqparser;   // parser for httprequest
+    LKString *partial_line;
+    LKHttpResponse *resp;             // http response to be sent
+    struct clientctx *next;           // link to next client
 } clientctx_t;
 
 clientctx_t *clientctx_new(int sock);
@@ -44,12 +44,12 @@ void handle_sigchld(int sig);
 
 void read_request_from_client(int clientfd);
 void process_line(clientctx_t *ctx, char *line);
-lkhttpresponse_s *process_req(lkhttprequest_s *req);
+LKHttpResponse *process_req(LKHttpRequest *req);
 int is_valid_http_method(char *method);
 char *fileext(char *filepath);
 
 void send_response_to_client(int clientfd);
-void send_buf_bytes(int sock, lkbuf_s *buf);
+void send_buf_bytes(int sock, LKBuffer *buf);
 void terminate_client_session(int clientfd);
 
 clientctx_t *ctxhead = NULL;
@@ -169,20 +169,20 @@ int main(int argc, char *argv[]) {
 clientctx_t *clientctx_new(int sock) {
     clientctx_t *ctx = malloc(sizeof(clientctx_t));
     ctx->sock = sock;
-    ctx->sr = lksocketreader_new(sock, 0);
-    ctx->reqparser = lkhttprequestparser_new();
-    ctx->partial_line = lkstr_new("");
+    ctx->sr = lk_socketreader_new(sock, 0);
+    ctx->reqparser = lk_httprequestparser_new();
+    ctx->partial_line = lk_string_new("");
     ctx->resp = NULL;
     ctx->next = NULL;
     return ctx;
 }
 
 void clientctx_free(clientctx_t *ctx) {
-    lksocketreader_free(ctx->sr);
-    lkhttprequestparser_free(ctx->reqparser);
-    lkstr_free(ctx->partial_line);
+    lk_socketreader_free(ctx->sr);
+    lk_httprequestparser_free(ctx->reqparser);
+    lk_string_free(ctx->partial_line);
     if (ctx->resp) {
-        lkhttpresponse_free(ctx->resp);
+        lk_httpresponse_free(ctx->resp);
     }
 
     ctx->sr = NULL;
@@ -319,7 +319,7 @@ void read_request_from_client(int clientfd) {
 
     while (1) {
         char buf[1000];
-        int z = lksocketreader_readline(ctx->sr, buf, sizeof buf);
+        int z = lk_socketreader_readline(ctx->sr, buf, sizeof buf);
         if (z == 0) {
             break;
         }
@@ -331,10 +331,10 @@ void read_request_from_client(int clientfd) {
 
         // If there's a previous partial line, combine it with current line.
         if (ctx->partial_line->s_len > 0) {
-            lkstr_append(ctx->partial_line, buf);
+            lk_string_append(ctx->partial_line, buf);
             if (ends_with_newline(ctx->partial_line->s)) {
                 process_line(ctx, ctx->partial_line->s);
-                lkstr_assign(ctx->partial_line, "");
+                lk_string_assign(ctx->partial_line, "");
             }
             continue;
         }
@@ -342,7 +342,7 @@ void read_request_from_client(int clientfd) {
         // If current line is only partial line (not newline terminated), remember it for
         // next read.
         if (!ends_with_newline(buf)) {
-            lkstr_assign(ctx->partial_line, buf);
+            lk_string_assign(ctx->partial_line, buf);
             continue;
         }
 
@@ -352,9 +352,9 @@ void read_request_from_client(int clientfd) {
 }
 
 void process_line(clientctx_t *ctx, char *line) {
-    lkhttprequestparser_parse_line(ctx->reqparser, line);
+    lk_httprequestparser_parse_line(ctx->reqparser, line);
     if (ctx->reqparser->body_complete) {
-        lkhttprequest_s *req = ctx->reqparser->req;
+        LKHttpRequest *req = ctx->reqparser->req;
         printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
             req->method->s, req->uri->s, 200);
 
@@ -367,7 +367,7 @@ void process_line(clientctx_t *ctx, char *line) {
 }
 
 // Generate an http response to an http request.
-lkhttpresponse_s *process_req(lkhttprequest_s *req) {
+LKHttpResponse *process_req(LKHttpRequest *req) {
     int z;
 
     static char *html_error_start = 
@@ -386,7 +386,7 @@ lkhttpresponse_s *process_req(lkhttprequest_s *req) {
        "<p>Hello Little Kitten!</p>\n"
        "</body></html>\n";
 
-    lkhttpresponse_s *resp = lkhttpresponse_new();
+    LKHttpResponse *resp = lk_httpresponse_new();
 
     char *method = req->method->s;
     char *uri = req->uri->s;
@@ -398,38 +398,38 @@ lkhttpresponse_s *process_req(lkhttprequest_s *req) {
 
     if (!is_valid_http_method(method)) {
         resp->status = 501;
-        lkstr_sprintf(resp->statustext, "Unsupported method ('%s')", method);
-        lkstr_assign(resp->version, "HTTP/1.0");
+        lk_string_sprintf(resp->statustext, "Unsupported method ('%s')", method);
+        lk_string_assign(resp->version, "HTTP/1.0");
 
-        lkbuf_append(resp->body, html_error_start, strlen(html_error_start));
-        lkbuf_append_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext->s);
-        lkbuf_append(resp->body, html_error_end, strlen(html_error_end));
-        lkhttpresponse_gen_headbuf(resp);
+        lk_buffer_append(resp->body, html_error_start, strlen(html_error_start));
+        lk_buffer_append_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext->s);
+        lk_buffer_append(resp->body, html_error_end, strlen(html_error_end));
+        lk_httpresponse_gen_headbuf(resp);
         return resp;
     }
     if (!strcmp(method, "GET")) {
         resp->status = 200;
-        lkstr_assign(resp->statustext, "OK");
-        lkstr_assign(resp->version, "HTTP/1.0");
+        lk_string_assign(resp->statustext, "OK");
+        lk_string_assign(resp->version, "HTTP/1.0");
 
         // /littlekitten sample page
         if (!strcmp(uri, "/littlekitten")) {
-            lkhttpresponse_add_header(resp, "Content-Type", "text/html");
-            lkbuf_append(resp->body, html_sample, strlen(html_sample));
-            lkhttpresponse_gen_headbuf(resp);
+            lk_httpresponse_add_header(resp, "Content-Type", "text/html");
+            lk_buffer_append(resp->body, html_sample, strlen(html_sample));
+            lk_httpresponse_gen_headbuf(resp);
             return resp;
         }
 
-        lkstr_s *content_type = lkstr_new("");
-        lkstr_sprintf(content_type, "text/%s;", fileext(uri));
-        lkhttpresponse_add_header(resp, "Content-Type", content_type->s);
-        lkstr_free(content_type);
+        LKString *content_type = lk_string_new("");
+        lk_string_sprintf(content_type, "text/%s;", fileext(uri));
+        lk_httpresponse_add_header(resp, "Content-Type", content_type->s);
+        lk_string_free(content_type);
 
         // uri_filepath = current dir + uri
         // Ex. "/path/to" + "/index.html"
         char *tmp_currentdir = get_current_dir_name();
-        lkstr_s *uri_filepath = lkstr_new(tmp_currentdir);
-        lkstr_append(uri_filepath, uri);
+        LKString *uri_filepath = lk_string_new(tmp_currentdir);
+        lk_string_append(uri_filepath, uri);
         free(tmp_currentdir);
 
         printf("uri_filepath: %s\n", uri_filepath->s);
@@ -437,9 +437,9 @@ lkhttpresponse_s *process_req(lkhttprequest_s *req) {
         if (z == -1) {
             print_err("readfile()");
         }
-        lkstr_free(uri_filepath);
+        lk_string_free(uri_filepath);
 
-        lkhttpresponse_gen_headbuf(resp);
+        lk_httpresponse_gen_headbuf(resp);
         return resp;
     }
 
@@ -530,7 +530,7 @@ void send_response_to_client(int clientfd) {
     assert(ctx->resp != NULL);
     assert(ctx->resp->head != NULL);
 
-    lkhttpresponse_s *resp = ctx->resp;
+    LKHttpResponse *resp = ctx->resp;
 
     // Send as much response bytes as the client will receive.
     // Send response head bytes first, then response body bytes.
@@ -546,7 +546,7 @@ void send_response_to_client(int clientfd) {
 
 // Send buf data into sock, keeping track of last buffer position.
 // Used to cumulatively send buffer data with multiple sends.
-void send_buf_bytes(int sock, lkbuf_s *buf) {
+void send_buf_bytes(int sock, LKBuffer *buf) {
     size_t nsent = 0;
     int z = sock_send(sock,
         buf->bytes + buf->bytes_cur,

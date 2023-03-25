@@ -8,23 +8,23 @@
 #include <assert.h>
 #include "lklib.h"
 
-lkstringlist_s *lkstringlist_new() {
-    lkstringlist_s *sl = malloc(sizeof(lkstringlist_s));
+LKStringList *lk_stringlist_new() {
+    LKStringList *sl = malloc(sizeof(LKStringList));
     sl->items_size = 1; // start with room for n items
     sl->items_len = 0;
 
-    sl->items = malloc(sl->items_size * sizeof(lkstr_s*));
-    memset(sl->items, 0, sl->items_size * sizeof(lkstr_s*));
+    sl->items = malloc(sl->items_size * sizeof(LKString*));
+    memset(sl->items, 0, sl->items_size * sizeof(LKString*));
     return sl;
 }
 
-void lkstringlist_free(lkstringlist_s *sl) {
+void lk_stringlist_free(LKStringList *sl) {
     assert(sl->items != NULL);
 
     for (int i=0; i < sl->items_len; i++) {
-        lkstr_free(sl->items[i]);
+        lk_string_free(sl->items[i]);
     }
-    memset(sl->items, 0, sl->items_size * sizeof(lkstr_s*));
+    memset(sl->items, 0, sl->items_size * sizeof(LKString*));
 
     free(sl->items);
     sl->items = NULL;
@@ -32,24 +32,24 @@ void lkstringlist_free(lkstringlist_s *sl) {
 }
 
 #define N_GROW_ITEMS 1
-void lkstringlist_append(lkstringlist_s *sl, char *s) {
+void lk_stringlist_append(LKStringList *sl, char *s) {
     assert(sl->items_len <= sl->items_size);
 
     if (sl->items_len == sl->items_size) {
-        lkstr_s **pitems = realloc(sl->items, (sl->items_size+N_GROW_ITEMS) * sizeof(lkstr_s*));
+        LKString **pitems = realloc(sl->items, (sl->items_size+N_GROW_ITEMS) * sizeof(LKString*));
         if (pitems == NULL) {
             return;
         }
         sl->items = pitems;
         sl->items_size += N_GROW_ITEMS;
     }
-    sl->items[sl->items_len] = lkstr_new(s);
+    sl->items[sl->items_len] = lk_string_new(s);
     sl->items_len++;
 
     assert(sl->items_len <= sl->items_size);
 }
 
-void lkstringlist_append_sprintf(lkstringlist_s *sl, const char *fmt, ...) {
+void lk_stringlist_append_sprintf(LKStringList *sl, const char *fmt, ...) {
     int z;
     char *pstr = NULL;
 
@@ -60,28 +60,28 @@ void lkstringlist_append_sprintf(lkstringlist_s *sl, const char *fmt, ...) {
 
     if (z == -1) return;
 
-    lkstringlist_append(sl, pstr);
+    lk_stringlist_append(sl, pstr);
 
     free(pstr);
     pstr = NULL;
 }
 
-lkstr_s *lkstringlist_get(lkstringlist_s *sl, unsigned int i) {
+LKString *lk_stringlist_get(LKStringList *sl, unsigned int i) {
     if (sl->items_len == 0) return NULL;
     if (i >= sl->items_len) return NULL;
 
     return sl->items[i];
 }
 
-void lkstringlist_remove(lkstringlist_s *sl, unsigned int i) {
+void lk_stringlist_remove(LKStringList *sl, unsigned int i) {
     if (sl->items_len == 0) return;
     if (i >= sl->items_len) return;
 
-    lkstr_free(sl->items[i]);
+    lk_string_free(sl->items[i]);
 
     int num_items_after = sl->items_len-i-1;
-    memmove(sl->items+i, sl->items+i+1, num_items_after * sizeof(lkstr_s*));
-    memset(sl->items+sl->items_len-1, 0, sizeof(lkstr_s*));
+    memmove(sl->items+i, sl->items+i+1, num_items_after * sizeof(LKString*));
+    memset(sl->items+sl->items_len-1, 0, sizeof(LKString*));
     sl->items_len--;
 }
 
