@@ -36,8 +36,6 @@ void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v);
 void lk_httpresponse_gen_headbuf(LKHttpResponse *resp);
 void lk_httpresponse_debugprint(LKHttpResponse *resp);
 
-typedef void (*lk_http_handler_func)(LKHttpRequest *req, LKHttpResponse *resp);
-
 
 /*** LKSocketReader - Buffered input for sockets ***/
 typedef struct {
@@ -68,6 +66,22 @@ LKHttpRequestParser *lk_httprequestparser_new();
 void lk_httprequestparser_free(LKHttpRequestParser *parser);
 void lk_httprequestparser_reset(LKHttpRequestParser *parser);
 void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
+
+
+/*** LKHttpServer ***/
+typedef struct httpclientcontext LKHttpClientContext;
+typedef void (*LKHttpHandlerFunc)(LKHttpRequest *req, LKHttpResponse *resp);
+
+typedef struct {
+    LKHttpClientContext *ctxhead;
+    fd_set readfds;
+    fd_set writefds;
+    LKHttpHandlerFunc http_handler_func;
+} LKHttpServer;
+
+LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc);
+void lk_httpserver_free(LKHttpServer *server);
+int lk_httpserver_serve(LKHttpServer *server, int listen_sock);
 
 
 /*** socket helper functions ***/
