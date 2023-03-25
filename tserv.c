@@ -185,7 +185,7 @@ void serve_file_handler(LKHttpRequest *req, LKHttpResponse *resp) {
         free(tmp_currentdir);
 
         printf("uri_filepath: %s\n", uri_filepath->s);
-        z = readfile(uri_filepath->s, resp->body);
+        z = lk_readfile(uri_filepath->s, resp->body);
         if (z == -1) {
             print_err("readfile()");
         }

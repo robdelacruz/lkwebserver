@@ -13,7 +13,7 @@
 #include "lknet.h"
 
 // Remove trailing CRLF or LF (\n) from string.
-void chomp(char* s) {
+void lk_chomp(char* s) {
     int slen = strlen(s);
     for (int i=slen-1; i >= 0; i--) {
         if (s[i] != '\n' && s[i] != '\r') {
@@ -24,21 +24,21 @@ void chomp(char* s) {
     }
 }
 
-void set_sock_timeout(int sock, int nsecs, int ms) {
+void lk_set_sock_timeout(int sock, int nsecs, int ms) {
     struct timeval tv;
     tv.tv_sec = nsecs;
     tv.tv_usec = ms * 1000; // convert milliseconds to microseconds
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 }
 
-void set_sock_nonblocking(int sock) {
+void lk_set_sock_nonblocking(int sock) {
     fcntl(sock, F_SETFL, O_NONBLOCK);
 }
 
 // Receive count bytes into buf nonblocking.
 // Returns 0 for success, -1 for error.
 // On return, ret_nread contains the number of bytes received.
-int sock_recv(int sock, char *buf, size_t count, size_t *ret_nread) {
+int lk_sock_recv(int sock, char *buf, size_t count, size_t *ret_nread) {
     size_t nread = 0;
     while (nread < count) {
         int z = recv(sock, buf+nread, count-nread, MSG_DONTWAIT);
@@ -65,7 +65,7 @@ int sock_recv(int sock, char *buf, size_t count, size_t *ret_nread) {
 // Send count buf bytes into sock nonblocking.
 // Returns 0 for success, -1 for error.
 // On return, ret_nsent contains the number of bytes sent.
-int sock_send(int sock, char *buf, size_t count, size_t *ret_nsent) {
+int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent) {
     int nsent = 0;
     while (nsent < count) {
         int z = send(sock, buf+nsent, count-nsent, MSG_DONTWAIT);
@@ -299,7 +299,7 @@ void parse_request_line(char *line, LKHttpRequest *req) {
     char *saveptr;
     char *delim = " \t";
     char *linetmp = strdup(line);
-    chomp(linetmp);
+    lk_chomp(linetmp);
     char *p = linetmp;
     while (ntoksread < 3) {
         toks[ntoksread] = strtok_r(p, delim, &saveptr);
@@ -334,7 +334,7 @@ void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *r
     char *delim = ":";
 
     char *linetmp = strdup(line);
-    chomp(linetmp);
+    lk_chomp(linetmp);
     char *k = strtok_r(linetmp, delim, &saveptr);
     if (k == NULL) {
         free(linetmp);
@@ -483,12 +483,12 @@ void lk_httpresponse_debugprint(LKHttpResponse *resp) {
 }
 
 // Open and read entire file contents into buf.
-ssize_t readfile(char *filepath, LKBuffer *buf) {
+ssize_t lk_readfile(char *filepath, LKBuffer *buf) {
     int fd = open(filepath, O_RDONLY);
     if (fd == -1) {
         return -1;
     }
-    int z = readfd(fd, buf);
+    int z = lk_readfd(fd, buf);
     if (z == -1) {
         int tmperrno = errno;
         close(fd);
@@ -502,7 +502,7 @@ ssize_t readfile(char *filepath, LKBuffer *buf) {
 
 // Read entire file descriptor contents into buf.
 #define TMPBUF_SIZE 512
-ssize_t readfd(int fd, LKBuffer *buf) {
+ssize_t lk_readfd(int fd, LKBuffer *buf) {
     char tmpbuf[TMPBUF_SIZE];
 
     int nread = 0;
@@ -525,7 +525,7 @@ ssize_t readfd(int fd, LKBuffer *buf) {
 
 // Append src to dest, allocating new memory in dest if needed.
 // Return new pointer to dest.
-char *astrncat(char *dest, char *src, size_t src_len) {
+char *lk_astrncat(char *dest, char *src, size_t src_len) {
     int dest_len = strlen(dest);
     dest = realloc(dest, dest_len + src_len + 1);
     strncat(dest, src, src_len);

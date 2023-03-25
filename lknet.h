@@ -85,21 +85,21 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock);
 
 
 /*** socket helper functions ***/
-int sock_recv(int sock, char *buf, size_t count, size_t *ret_nread);
-int sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
-void set_sock_timeout(int sock, int nsecs, int ms);
-void set_sock_nonblocking(int sock);
+int lk_sock_recv(int sock, char *buf, size_t count, size_t *ret_nread);
+int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
+void lk_set_sock_timeout(int sock, int nsecs, int ms);
+void lk_set_sock_nonblocking(int sock);
 
 /*** Other helper functions ***/
 // Remove trailing CRLF or LF (\n) from string.
-void chomp(char* s);
+void lk_chomp(char* s);
 // Read entire file into buf.
-ssize_t readfile(char *filepath, LKBuffer *buf);
+ssize_t lk_readfile(char *filepath, LKBuffer *buf);
 // Read entire file descriptor contents into buf.
-ssize_t readfd(int fd, LKBuffer *buf);
+ssize_t lk_readfd(int fd, LKBuffer *buf);
 // Append src to dest, allocating new memory in dest if needed.
 // Return new pointer to dest.
-char *astrncat(char *dest, char *src, size_t src_len);
+char *lk_astrncat(char *dest, char *src, size_t src_len);
 
 #endif
 

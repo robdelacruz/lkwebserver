@@ -334,7 +334,7 @@ void send_response_to_client(LKHttpServer *server, int clientfd) {
 // Used to cumulatively send buffer data with multiple sends.
 int send_buf_bytes(int sock, LKBuffer *buf) {
     size_t nsent = 0;
-    int z = sock_send(sock,
+    int z = lk_sock_send(sock,
         buf->bytes + buf->bytes_cur,
         buf->bytes_len - buf->bytes_cur,
         &nsent);
