@@ -25,9 +25,13 @@ void *addrinfo_sin_addr(struct addrinfo *addr);
 void handle_sigint(int sig);
 void handle_sigchld(int sig);
 
-void serve_file_handler(LKHttpRequest *req, LKHttpResponse *resp);
+void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
 int is_valid_http_method(char *method);
 char *fileext(char *filepath);
+
+typedef struct {
+    char *rootdir;
+} FileHandlerCtx;
 
 int main(int argc, char *argv[]) {
     int z;
@@ -72,7 +76,10 @@ int main(int argc, char *argv[]) {
     freeaddrinfo(servaddr);
     servaddr = NULL;
 
-    LKHttpServer *httpserver = lk_httpserver_new(serve_file_handler);
+    FileHandlerCtx handler_ctx;
+    handler_ctx.rootdir = "/home/rob";
+
+    LKHttpServer *httpserver = lk_httpserver_new(serve_file_handler, (void*) &handler_ctx);
 
     printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
     z = lk_httpserver_serve(httpserver, s0);
@@ -121,7 +128,9 @@ void handle_sigchld(int sig) {
 }
 
 // Generate an http response to an http request.
-void serve_file_handler(LKHttpRequest *req, LKHttpResponse *resp) {
+void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp) {
+    FileHandlerCtx *ctx = handler_ctx;
+    printf("serve_file_handler() ctx->rootdir: '%s'\n", ctx->rootdir);
     int z;
 
     static char *html_error_start = 

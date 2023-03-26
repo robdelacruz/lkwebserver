@@ -70,16 +70,17 @@ void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
 
 /*** LKHttpServer ***/
 typedef struct httpclientcontext LKHttpClientContext;
-typedef void (*LKHttpHandlerFunc)(LKHttpRequest *req, LKHttpResponse *resp);
+typedef void (*LKHttpHandlerFunc)(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
 
 typedef struct {
     LKHttpClientContext *ctxhead;
     fd_set readfds;
     fd_set writefds;
     LKHttpHandlerFunc http_handler_func;
+    void *handler_ctx;
 } LKHttpServer;
 
-LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc);
+LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc, void *handler_ctx);
 void lk_httpserver_free(LKHttpServer *server);
 int lk_httpserver_serve(LKHttpServer *server, int listen_sock);
 

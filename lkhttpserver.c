@@ -50,9 +50,10 @@ void lk_print_err(char *s) {
     fprintf(stderr, "%s: %s\n", s, strerror(errno));
 }
 
-LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc) {
+LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc, void *handler_ctx) {
     LKHttpServer *server = malloc(sizeof(LKHttpServer));
     server->ctxhead = NULL;
+    server->handler_ctx = handler_ctx;
     server->http_handler_func = handlerfunc;
     return server;
 }
@@ -279,7 +280,7 @@ void process_line(LKHttpServer *server, LKHttpClientContext *ctx, char *line) {
         
         LKHttpHandlerFunc handler_func = server->http_handler_func;
         if (handler_func) {
-            (*handler_func)(req, ctx->resp);
+            (*handler_func)(server->handler_ctx, req, ctx->resp);
         } else {
             // If no handler, return default 200 OK response.
             ctx->resp->status = 200;
