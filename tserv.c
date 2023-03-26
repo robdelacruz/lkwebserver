@@ -187,7 +187,9 @@ void serve_file_handler(LKHttpRequest *req, LKHttpResponse *resp) {
         printf("uri_filepath: %s\n", uri_filepath->s);
         z = lk_readfile(uri_filepath->s, resp->body);
         if (z == -1) {
-            print_err("readfile()");
+            // uri file not found
+            resp->status = 404;
+            lk_string_sprintf(resp->statustext, "File not found '%s'", uri);
         }
         lk_string_free(uri_filepath);
 
