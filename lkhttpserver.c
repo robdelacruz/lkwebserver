@@ -109,7 +109,7 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                         maxfd = newclientsock;
                     }
 
-                    printf("read fd: %d\n", newclientsock);
+                    //printf("read fd: %d\n", newclientsock);
                     LKHttpClientContext *ctx = lk_clientcontext_new(newclientsock);
                     add_clientcontext(&server->ctxhead, ctx);
                     continue;
@@ -119,7 +119,7 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                     read_request_from_client(server, clientfd);
                 }
             } else if (FD_ISSET(i, &cur_writefds)) {
-                printf("write fd %d\n", i);
+                //printf("write fd %d\n", i);
                 // i contains client socket ready to be written to.
                 int clientfd = i;
                 send_response_to_client(server, clientfd);
@@ -281,6 +281,7 @@ void process_line(LKHttpServer *server, LKHttpClientContext *ctx, char *line) {
         LKHttpHandlerFunc handler_func = server->http_handler_func;
         if (handler_func) {
             (*handler_func)(server->handler_ctx, req, ctx->resp);
+            lk_httpresponse_gen_headbuf(ctx->resp);
         } else {
             // If no handler, return default 200 OK response.
             ctx->resp->status = 200;
@@ -345,7 +346,7 @@ int send_buf_bytes(int sock, LKBuffer *buf) {
 
 // Disconnect from client.
 void terminate_client_session(LKHttpServer *server, int clientfd) {
-    printf("terminate_client fd %d\n", clientfd);
+    //printf("terminate_client fd %d\n", clientfd);
 
     // Remove select() read and write I/O
     FD_CLR(clientfd, &server->readfds);

@@ -28,6 +28,12 @@ void lk_buffer_free(LKBuffer *buf) {
     free(buf);
 }
 
+void lk_buffer_clear(LKBuffer *buf) {
+    memset(buf->bytes, 0, buf->bytes_len);
+    buf->bytes_len = 0;
+    buf->bytes_cur = 0;
+}
+
 int lk_buffer_append(LKBuffer *buf, char *bytes, size_t len) {
     // If not enough capacity to append bytes, expand the bytes buffer.
     if (len > buf->bytes_size - buf->bytes_len) {
