@@ -166,7 +166,6 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         if (current_dir == NULL) {
             resp->status = 500;
             lk_string_assign(resp->statustext, "Server error reading directory");
-            lk_string_assign(resp->version, "HTTP/1.0");
             return;
         }
         lk_string_append(settings->home_dir, current_dir);
@@ -192,15 +191,9 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
     char *method = req->method->s;
     char *uri = req->uri->s;
 
-    // By default return response OK.
-    resp->status = 200;
-    lk_string_assign(resp->statustext, "OK");
-    lk_string_assign(resp->version, "HTTP/1.0");
-
     if (!is_valid_http_method(method)) {
         resp->status = 501;
         lk_string_sprintf(resp->statustext, "Unsupported method ('%s')", method);
-        lk_string_assign(resp->version, "HTTP/1.0");
 
         lk_buffer_append(resp->body, html_error_start, strlen(html_error_start));
         lk_buffer_append_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext->s);

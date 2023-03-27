@@ -33,7 +33,7 @@ typedef struct {
 LKHttpResponse *lk_httpresponse_new();
 void lk_httpresponse_free(LKHttpResponse *resp);
 void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v);
-void lk_httpresponse_gen_headbuf(LKHttpResponse *resp);
+void lk_httpresponse_finalize(LKHttpResponse *resp);
 void lk_httpresponse_debugprint(LKHttpResponse *resp);
 
 
@@ -55,11 +55,11 @@ void lk_socketreader_debugprint(LKSocketReader *sr);
 
 /*** LKHttpRequestParser ***/
 typedef struct {
-    unsigned int nlinesread;             // number of lines read so far
-    unsigned int header_content_length;  // value of previous Content-Length header parsed
-    int head_complete;                  // flag indicating header lines complete
-    int body_complete;                  // flag indicating request body (if needed) complete
-    LKHttpRequest *req;               // httprequest to output to while parsing
+    unsigned int nlinesread;
+    int head_complete;              // flag indicating header lines complete
+    int body_complete;              // flag indicating request body complete
+    unsigned int content_length;    // value of Content-Length header
+    LKHttpRequest *req;             // httprequest to output to while parsing
 } LKHttpRequestParser;
 
 LKHttpRequestParser *lk_httprequestparser_new();

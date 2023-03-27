@@ -266,7 +266,7 @@ void lk_httprequest_debugprint(LKHttpRequest *req) {
 LKHttpRequestParser *lk_httprequestparser_new() {
     LKHttpRequestParser *parser = malloc(sizeof(LKHttpRequestParser));
     parser->nlinesread = 0;
-    parser->header_content_length = 0;
+    parser->content_length = 0;
     parser->head_complete = 0;
     parser->body_complete = 0;
     parser->req = lk_httprequest_new();
@@ -282,7 +282,7 @@ void lk_httprequestparser_free(LKHttpRequestParser *parser) {
 // Clear any pending state.
 void lk_httprequestparser_reset(LKHttpRequestParser *parser) {
     parser->nlinesread = 0;
-    parser->header_content_length = 0;
+    parser->content_length = 0;
     parser->head_complete = 0;
     parser->body_complete = 0;
 
@@ -353,7 +353,7 @@ void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *r
 
     if (!strcasecmp(k, "Content-Length")) {
         int content_length = atoi(v);
-        parser->header_content_length = content_length;
+        parser->content_length = content_length;
     }
 
     free(linetmp);
@@ -382,39 +382,32 @@ void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line) {
         parser->nlinesread++;
         return;
     }
-    if (parser->body_complete) {
+
+    parser->nlinesread++;
+
+    // Header lines
+    if (!parser->head_complete) {
+        // Empty CRLF line ends the headers section
+        if (is_empty_line(line)) {
+            parser->head_complete = 1;
+
+            // No body to read (Content-Length: 0)
+            if (parser->content_length == 0) {
+                parser->body_complete = 1;
+            }
+            return;
+        }
+        parse_header_line(parser, line, parser->req);
         return;
     }
-    // Discard body lines if no Content-Length specified.
-    if (parser->head_complete && parser->header_content_length == 0) {
-        return;
-    }
-    // Append body line to http request.
-    if (parser->head_complete) {
+
+    // Body bytes
+    if (!parser->body_complete) {
         lk_buffer_append(parser->req->body, line, strlen(line));
 
-        if (parser->req->body->bytes_len >= parser->header_content_length) {
+        if (parser->req->body->bytes_len >= parser->content_length) {
             parser->body_complete = 1;
         }
-        parser->nlinesread++;
-        return;
-    }
-    // Empty CRLF line ends the headers section
-    if (is_empty_line(line)) {
-        parser->head_complete = 1;
-        parser->nlinesread++;
-
-        //$$ Set body_complete if GET or HEAD request regardless of Content-Length?
-        if (parser->header_content_length == 0) {
-            parser->body_complete = 1;
-        }
-        return;
-    }
-    // Header line
-    if (!parser->head_complete) {
-        parse_header_line(parser, line, parser->req);
-        parser->nlinesread++;
-        return;
     }
 }
 
@@ -451,8 +444,20 @@ void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v) {
     lk_stringmap_set(resp->headers, k, lk_string_new(v));
 }
 
-void lk_httpresponse_gen_headbuf(LKHttpResponse *resp) {
+// Finalize the http response by setting head buffer.
+// Writes the status line, headers and CRLF blank string to head buffer.
+void lk_httpresponse_finalize(LKHttpResponse *resp) {
     lk_buffer_clear(resp->head);
+
+    // Default to 200 OK if no status set.
+    if (resp->status == 0) {
+        resp->status = 200;
+        lk_string_assign(resp->statustext, "OK");
+    }
+    // Default to HTTP version.
+    if (lk_string_sz_equal(resp->version, "")) {
+        lk_string_assign(resp->version, "HTTP/1.0");
+    }
     lk_buffer_append_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
     lk_buffer_append_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
     lk_buffer_append(resp->head, "\r\n", 2);

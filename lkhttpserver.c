@@ -281,13 +281,13 @@ void process_line(LKHttpServer *server, LKHttpClientContext *ctx, char *line) {
         LKHttpHandlerFunc handler_func = server->http_handler_func;
         if (handler_func) {
             (*handler_func)(server->handler_ctx, req, ctx->resp);
-            lk_httpresponse_gen_headbuf(ctx->resp);
+            lk_httpresponse_finalize(ctx->resp);
         } else {
             // If no handler, return default 200 OK response.
             ctx->resp->status = 200;
             lk_string_assign(ctx->resp->statustext, "Default OK");
             lk_string_assign(ctx->resp->version, "HTTP/1.0");
-            lk_httpresponse_gen_headbuf(ctx->resp);
+            lk_httpresponse_finalize(ctx->resp);
         }
         FD_SET(ctx->sock, &server->writefds);
         return;
