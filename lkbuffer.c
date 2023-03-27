@@ -8,6 +8,8 @@
 #include <assert.h>
 #include "lklib.h"
 
+#define LK_BUFFER_BUF_SIZE 1024
+
 LKBuffer *lk_buffer_new(size_t bytes_size) {
     if (bytes_size == 0) {
         bytes_size = 10; //$$ specify a default initial size
@@ -51,50 +53,33 @@ int lk_buffer_append(LKBuffer *buf, char *bytes, size_t len) {
     return 0;
 }
 
-#if 0
-// Append to buf using sprintf() to a fixed length space.
-// More efficient as no memory allocation needed, but it will
-// truncate strings longer than BUF_LINE_MAXSIZE.
-#define BUF_LINE_MAXSIZE 2048
-void lk_buffer_sprintf_line(LKBuffer *buf, const char *fmt, ...) {
-    char line[BUF_LINE_MAXSIZE];
-
-    va_list args;
-    va_start(args, fmt);
-    int z = vsnprintf(line, sizeof(line), fmt, args);
-    va_end(args);
-
-    // error in snprintf()
-    if (z < 0) return;
-
-    // if snprintf() truncated the output, fill in the terminating chars.
-    if (z > sizeof(line)) {
-        z = sizeof(line);
-        line[z-2] = '\n';
-        line[z-1] = '\0';
-    }
-
-    lk_buffer_append(buf, line, strlen(line));
-}
-#endif
-
 // Append to buf using asprintf().
 // Can handle all string lengths without truncating, but less
 // efficient as it allocs/deallocs memory.
 void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...) {
-    int z;
-    char *pstr = NULL;
+    char sbuf[LK_BUFFER_BUF_SIZE];
 
     va_list args;
     va_start(args, fmt);
-    z = vasprintf(&pstr, fmt, args);
+    int z = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
+    if (z < 0) return;
     va_end(args);
 
-    if (z == -1) return;
+    // If snprintf() truncated output to sbuf due to space,
+    // use asprintf() instead.
+    if (z >= sizeof(sbuf)) {
+        va_list args;
+        char *ps;
+        va_start(args, fmt);
+        int z = vasprintf(&ps, fmt, args);
+        if (z == -1) return;
+        va_end(args);
 
-    lk_buffer_append(buf, pstr, strlen(pstr)); //$$ use z+1 instead of strlen(pstr)?
+        lk_buffer_append(buf, ps, z);
+        free(ps);
+        return;
+    }
 
-    free(pstr);
-    pstr = NULL;
+    lk_buffer_append(buf, sbuf, z);
 }
 

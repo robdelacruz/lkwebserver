@@ -8,8 +8,10 @@
 #include <assert.h>
 #include "lklib.h"
 
+#define LK_STRING_BUF_SIZE 1024
+
 void zero_s(LKString *lks) {
-    memset(lks->s, '\0', lks->s_size+1);
+    memset(lks->s, 0, lks->s_size+1);
 }
 
 LKString *lk_string_new(char *s) {
@@ -61,15 +63,30 @@ void lk_string_assign(LKString *lks, char *s) {
 }
 
 void lk_string_sprintf(LKString *lks, char *fmt, ...) {
+    char sbuf[LK_STRING_BUF_SIZE];
+
     va_list args;
-    char *ps;
     va_start(args, fmt);
-    int z = vasprintf(&ps, fmt, args);
-    if (z == -1) return;
+    int z = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
+    if (z < 0) return;
     va_end(args);
 
-    lk_string_assign(lks, ps);
-    free(ps);
+    // If snprintf() truncated output to sbuf due to space,
+    // use asprintf() instead.
+    if (z >= sizeof(sbuf)) {
+        va_list args;
+        char *ps;
+        va_start(args, fmt);
+        int z = vasprintf(&ps, fmt, args);
+        if (z == -1) return;
+        va_end(args);
+
+        lk_string_assign(lks, ps);
+        free(ps);
+        return;
+    }
+
+    lk_string_assign(lks, sbuf);
 }
 
 void lk_string_append(LKString *lks, char *s) {

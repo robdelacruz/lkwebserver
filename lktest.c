@@ -65,6 +65,27 @@ void lkstring_test() {
     assert(lk_string_equal(lks, lks2));
     lk_string_free(lks);
     lk_string_free(lks2);
+
+    // Test strings larger than LK_STRING_BUF_SIZE
+    lks = lk_string_new("");
+    char sbuf[2000];
+    memset(sbuf, 'a', sizeof(sbuf));
+    sbuf[sizeof(sbuf)-1] = '\0';
+    lk_string_assign(lks, sbuf);
+
+    assert(lks->s_len == sizeof(sbuf)-1);
+    for (int i=0; i < sizeof(sbuf)-1; i++) {
+        assert(lks->s[i] == 'a');
+    }
+
+    lk_string_sprintf(lks, "sbuf: %s", sbuf);
+    assert(lks->s_len == sizeof(sbuf)-1 + 6);
+    assert(strncmp(lks->s, "sbuf: aaaaa", 11) == 0);
+    assert(lks->s[lks->s_len-2] == 'a');
+    assert(lks->s[lks->s_len-3] == 'a');
+    assert(lks->s[lks->s_len-4] == 'a');
+    lk_string_free(lks);
+
     printf("Done.\n");
 }
 
@@ -175,6 +196,28 @@ void lkbuffer_test() {
     assert(buf->bytes_len == 20);
     assert(!strncmp(buf->bytes+5, "abc 123", 7));
     assert(!strncmp(buf->bytes+5+8, "def 456", 7));
+    lk_buffer_free(buf);
+
+    // Test buffer append larger than LK_BUFFER_BUF_SIZE
+    buf = lk_buffer_new(0);
+    char sbuf[2000];
+    memset(sbuf, 'a', sizeof(sbuf));
+    lk_buffer_append(buf, sbuf, sizeof(sbuf));
+
+    assert(buf->bytes_len == sizeof(sbuf));
+    for (int i=0; i < sizeof(sbuf); i++) {
+        assert(buf->bytes[i] == 'a');
+    }
+    lk_buffer_free(buf);
+
+    buf = lk_buffer_new(0);
+    sbuf[sizeof(sbuf)-1] = '\0';
+    lk_buffer_append_sprintf(buf, "buf: %s", sbuf);
+    assert(buf->bytes_len == sizeof(sbuf)-1 + 5);
+    assert(strncmp(buf->bytes, "buf: aaaaa", 10) == 0);
+    assert(buf->bytes[buf->bytes_len-1] == 'a');
+    assert(buf->bytes[buf->bytes_len-2] == 'a');
+    assert(buf->bytes[buf->bytes_len-3] == 'a');
     lk_buffer_free(buf);
 
     printf("Done.\n");
