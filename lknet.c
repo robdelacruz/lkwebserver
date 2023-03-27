@@ -179,6 +179,10 @@ readline_end:
     return nread;
 }
 
+int lk_socketreader_readbytes(LKSocketReader *sr, char *dst, size_t count, size_t *ret_nread) {
+    return 0;
+}
+
 void debugprint_buf(char *buf, size_t buf_size) {
     printf("buf: ");
     for (int i=0; i < buf_size; i++) {
