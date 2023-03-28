@@ -92,6 +92,7 @@ int lk_sock_recv(int sock, char *buf, size_t count, size_t *ret_nread);
 int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
 void lk_set_sock_timeout(int sock, int nsecs, int ms);
 void lk_set_sock_nonblocking(int sock);
+LKString *lk_get_ipaddr_string(struct sockaddr *sa);
 
 /*** Other helper functions ***/
 // Remove trailing CRLF or LF (\n) from string.

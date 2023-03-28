@@ -20,6 +20,8 @@
 
 struct httpclientcontext {
     int sock;                         // client socket
+    struct sockaddr *client_sa;       // client address
+    LKString *client_ipaddr;           // client ip address string
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequestParser *reqparser;   // parser for httprequest
     LKString *partial_line;
@@ -29,7 +31,7 @@ struct httpclientcontext {
 
 // local functions
 void lk_print_err(char *s);
-LKHttpClientContext *lk_clientcontext_new(int sock);
+LKHttpClientContext *lk_clientcontext_new(int sock, struct sockaddr *sa);
 void lk_clientcontext_free(LKHttpClientContext *ctx);
 void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx);
 void remove_clientcontext(LKHttpClientContext **pphead, int sock);
@@ -97,9 +99,9 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
             if (FD_ISSET(i, &cur_readfds)) {
                 // New client connection
                 if (i == listen_sock) {
-                    struct sockaddr_in a;
-                    socklen_t a_len = sizeof(a);
-                    int newclientsock = accept(listen_sock, (struct sockaddr*)&a, &a_len);
+                    socklen_t sa_len = sizeof(struct sockaddr_in);
+                    struct sockaddr_in *sa = malloc(sa_len);
+                    int newclientsock = accept(listen_sock, (struct sockaddr*)sa, &sa_len);
                     if (newclientsock == -1) {
                         lk_print_err("accept()");
                         continue;
@@ -112,7 +114,7 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                     }
 
                     //printf("read fd: %d\n", newclientsock);
-                    LKHttpClientContext *ctx = lk_clientcontext_new(newclientsock);
+                    LKHttpClientContext *ctx = lk_clientcontext_new(newclientsock, (struct sockaddr*) sa);
                     add_clientcontext(&server->ctxhead, ctx);
                     continue;
                 } else {
@@ -135,9 +137,11 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
 
 /*** LKHttpClientContext functions ***/
 
-LKHttpClientContext *lk_clientcontext_new(int sock) {
+LKHttpClientContext *lk_clientcontext_new(int sock, struct sockaddr *sa) {
     LKHttpClientContext *ctx = malloc(sizeof(LKHttpClientContext));
     ctx->sock = sock;
+    ctx->client_sa = sa;
+    ctx->client_ipaddr = lk_get_ipaddr_string(sa);
     ctx->sr = lk_socketreader_new(sock, 0);
     ctx->reqparser = lk_httprequestparser_new();
     ctx->partial_line = lk_string_new("");
@@ -147,6 +151,10 @@ LKHttpClientContext *lk_clientcontext_new(int sock) {
 }
 
 void lk_clientcontext_free(LKHttpClientContext *ctx) {
+    if (ctx->client_sa) {
+        free(ctx->client_sa);
+    }
+    lk_string_free(ctx->client_ipaddr);
     lk_socketreader_free(ctx->sr);
     lk_httprequestparser_free(ctx->reqparser);
     lk_string_free(ctx->partial_line);
@@ -154,6 +162,8 @@ void lk_clientcontext_free(LKHttpClientContext *ctx) {
         lk_httpresponse_free(ctx->resp);
     }
 
+    ctx->client_sa = NULL;
+    ctx->client_ipaddr = NULL;
     ctx->sr = NULL;
     ctx->reqparser = NULL;
     ctx->resp = NULL;
@@ -313,23 +323,33 @@ int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx) {
 
 
 void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
-    LKHttpRequest *req = ctx->reqparser->req;
-    printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
-        req->method->s, req->uri->s, 200);
+    assert(ctx->reqparser->req);
 
-    ctx->resp = lk_httpresponse_new();
-    
+    LKHttpRequest *req = ctx->reqparser->req;
+    LKHttpResponse *resp = lk_httpresponse_new();
+
     LKHttpHandlerFunc handler_func = server->http_handler_func;
     if (handler_func) {
-        (*handler_func)(server->handler_ctx, req, ctx->resp);
-        lk_httpresponse_finalize(ctx->resp);
+        (*handler_func)(server->handler_ctx, req, resp);
+        lk_httpresponse_finalize(resp);
     } else {
         // If no handler, return default 200 OK response.
-        ctx->resp->status = 200;
-        lk_string_assign(ctx->resp->statustext, "Default OK");
-        lk_string_assign(ctx->resp->version, "HTTP/1.0");
-        lk_httpresponse_finalize(ctx->resp);
+        resp->status = 200;
+        lk_string_assign(resp->statustext, "Default OK");
+        lk_string_assign(resp->version, "HTTP/1.0");
+        lk_httpresponse_finalize(resp);
     }
+    printf("%s [%s] \"%s %s %s\" %d\n", 
+        ctx->client_ipaddr->s, "(28/Mar/2023 14:05:46)",
+        req->method->s, req->uri->s, resp->version->s,
+        resp->status);
+    if (resp->status >= 500 && resp->status < 600 && resp->statustext->s_len > 0) {
+        printf("%s [%s] %d - %s\n", 
+            "(127.0.0.1)", "(28/Mar/2023 14:05:46)",
+            resp->status, resp->statustext->s);
+    }
+
+    ctx->resp = resp;
     FD_SET(ctx->sock, &server->writefds);
     return;
 }

@@ -21,7 +21,6 @@
 
 void print_err(char *s);
 void exit_err(char *s);
-void *addrinfo_sin_addr(struct addrinfo *addr);
 void handle_sigint(int sig);
 void handle_sigchld(int sig);
 
@@ -68,13 +67,6 @@ int main(int argc, char *argv[]) {
         exit_err("getaddrinfo()");
     }
 
-    // Get human readable IP address string in servipstr.
-    char servipstr[INET6_ADDRSTRLEN];
-    const char *pz = inet_ntop(servaddr->ai_family, addrinfo_sin_addr(servaddr), servipstr, sizeof(servipstr));
-    if (pz ==NULL) {
-        exit_err("inet_ntop()");
-    }
-
     int s0 = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
     if (s0 == -1) {
         exit_err("socket()");
@@ -91,14 +83,10 @@ int main(int argc, char *argv[]) {
         exit_err("bind()");
     }
 
-    freeaddrinfo(servaddr);
-    servaddr = NULL;
-
+    // Command line params: webserver <home_dir> <cgi_dir>
+    //                      argv[0]   argv[1]    argv[2]
     char *home_dir = "";
     char *cgi_dir = "";
-
-    // webserver <home_dir> <cgi_dir>
-    // argv[0]   argv[1]    argv[2]
     if (argc > 1) home_dir = argv[1];
     if (argc > 2) cgi_dir = argv[2];
 
@@ -108,7 +96,11 @@ int main(int argc, char *argv[]) {
 
     LKHttpServer *httpserver = lk_httpserver_new(serve_file_handler, (void*) settings);
 
-    printf("Listening on %s:%s...\n", servipstr, LISTEN_PORT);
+    LKString *server_ipaddr_str = lk_get_ipaddr_string(servaddr->ai_addr);
+    printf("Serving HTTP on %s port %s...\n", server_ipaddr_str->s, LISTEN_PORT);
+    lk_string_free(server_ipaddr_str);
+    freeaddrinfo(servaddr);
+
     z = lk_httpserver_serve(httpserver, s0);
     if (z == -1) {
         exit_err("lk_httpserver_serve()");
@@ -128,18 +120,6 @@ void print_err(char *s) {
 void exit_err(char *s) {
     print_err(s);
     exit(1);
-}
-
-// Return sin_addr or sin6_addr depending on address family.
-void *addrinfo_sin_addr(struct addrinfo *addr) {
-    // addr->ai_addr is either struct sockaddr_in* or sockaddr_in6* depending on ai_family
-    if (addr->ai_family == AF_INET) {
-        struct sockaddr_in *p = (struct sockaddr_in*) addr->ai_addr;
-        return &(p->sin_addr);
-    } else {
-        struct sockaddr_in6 *p = (struct sockaddr_in6*) addr->ai_addr;
-        return &(p->sin6_addr);
-    }
 }
 
 void handle_sigint(int sig) {
@@ -191,6 +171,7 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
        "<p>Hello Little Kitten!</p>\n"
        "</body></html>\n";
 
+#if 0
     static char *html_start =
        "<!DOCTYPE html>\n"
        "<html>\n"
@@ -198,19 +179,11 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
        "<body>\n";
     static char *html_end =
        "</body></html>\n";
+#endif
 
     char *method = req->method->s;
     char *uri = req->uri->s;
 
-    if (!is_valid_http_method(method)) {
-        resp->status = 501;
-        lk_string_sprintf(resp->statustext, "Unsupported method ('%s')", method);
-
-        lk_buffer_append(resp->body, html_error_start, strlen(html_error_start));
-        lk_buffer_append_sprintf(resp->body, "<p>%d %s</p>\n", resp->status, resp->statustext->s);
-        lk_buffer_append(resp->body, html_error_end, strlen(html_error_end));
-        return;
-    }
     if (!strcmp(method, "GET")) {
         // /littlekitten sample page
         if (!strcmp(uri, "/littlekitten")) {
@@ -250,6 +223,7 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         }
         return;
     }
+#if 0
     if (!strcmp(method, "POST")) {
         lk_httpresponse_add_header(resp, "Content-Type", "text/html");
         lk_buffer_append(resp->body, html_start, strlen(html_start));
@@ -259,6 +233,15 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         lk_buffer_append(resp->body, html_end, strlen(html_end));
         return;
     }
+#endif
+
+    resp->status = 501;
+    lk_string_sprintf(resp->statustext, "Unsupported method ('%s')", method);
+
+    lk_buffer_append(resp->body, html_error_start, strlen(html_error_start));
+    lk_buffer_append_sprintf(resp->body, "<p>Error code %d.</p>\n", resp->status);
+    lk_buffer_append_sprintf(resp->body, "<p>Message: Unsupported method ('%s').</p>\n", resp->statustext->s);
+    lk_buffer_append(resp->body, html_error_end, strlen(html_error_end));
 }
 
 // Read <home_dir>/<uri> file into buffer.

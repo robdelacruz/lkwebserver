@@ -8,6 +8,9 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <fcntl.h>
 #include "lklib.h"
 #include "lknet.h"
@@ -33,6 +36,29 @@ void lk_set_sock_timeout(int sock, int nsecs, int ms) {
 
 void lk_set_sock_nonblocking(int sock) {
     fcntl(sock, F_SETFL, O_NONBLOCK);
+}
+
+// Return sin_addr or sin6_addr depending on address family.
+void *sockaddr_sin_addr(struct sockaddr *sa) {
+    // addr->ai_addr is either struct sockaddr_in* or sockaddr_in6* depending on ai_family
+    if (sa->sa_family == AF_INET) {
+        struct sockaddr_in *p = (struct sockaddr_in*) sa;
+        return &(p->sin_addr);
+    } else {
+        struct sockaddr_in6 *p = (struct sockaddr_in6*) sa;
+        return &(p->sin6_addr);
+    }
+}
+
+// Return human readable IP address from sockaddr
+LKString *lk_get_ipaddr_string(struct sockaddr *sa) {
+    char servipstr[INET6_ADDRSTRLEN];
+    const char *pz = inet_ntop(sa->sa_family, sockaddr_sin_addr(sa),
+                               servipstr, sizeof(servipstr));
+    if (pz == NULL) {
+        return lk_string_new("");
+    }
+    return lk_string_new(servipstr);
 }
 
 // Receive count bytes into buf nonblocking.
