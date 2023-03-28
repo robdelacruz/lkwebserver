@@ -49,7 +49,7 @@ typedef struct {
 
 LKSocketReader *lk_socketreader_new(int sock, size_t initial_size);
 void lk_socketreader_free(LKSocketReader *sr);
-ssize_t lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len);
+int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size_t *ret_nread);
 int lk_socketreader_readbytes(LKSocketReader *sr, char *dst, size_t count, size_t *ret_nread);
 void lk_socketreader_debugprint(LKSocketReader *sr);
 
@@ -67,6 +67,7 @@ LKHttpRequestParser *lk_httprequestparser_new();
 void lk_httprequestparser_free(LKHttpRequestParser *parser);
 void lk_httprequestparser_reset(LKHttpRequestParser *parser);
 void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
+void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, size_t buf_len);
 
 
 /*** LKHttpServer ***/

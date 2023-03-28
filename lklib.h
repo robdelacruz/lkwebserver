@@ -53,6 +53,7 @@ LKBuffer *lk_buffer_new(size_t bytes_size);
 void lk_buffer_free(LKBuffer *buf);
 void lk_buffer_clear(LKBuffer *buf);
 int lk_buffer_append(LKBuffer *buf, char *bytes, size_t len);
+int lk_buffer_append_sz(LKBuffer *buf, char *s);
 void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...);
 
 

@@ -26,7 +26,7 @@ void handle_sigint(int sig);
 void handle_sigchld(int sig);
 
 void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
-int read_uri_file(char *home_dir, char *uri, LKHttpResponse *resp);
+int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
 int is_valid_http_method(char *method);
 char *fileext(char *filepath);
 
@@ -157,6 +157,9 @@ void handle_sigchld(int sig) {
 
 // Generate an http response to an http request.
 void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp) {
+//    printf("serve_file_handler():\n");
+//    lk_httprequest_debugprint(req);
+
     int z;
     FileHandlerSettings *settings = handler_ctx;
 
@@ -188,6 +191,14 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
        "<p>Hello Little Kitten!</p>\n"
        "</body></html>\n";
 
+    static char *html_start =
+       "<!DOCTYPE html>\n"
+       "<html>\n"
+       "<head><title>Little Kitten Sample Response</title></head>\n"
+       "<body>\n";
+    static char *html_end =
+       "</body></html>\n";
+
     char *method = req->method->s;
     char *uri = req->uri->s;
 
@@ -216,18 +227,18 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         // if no page given, try opening index.html, ...
         //$$ Better way to do this?
         if (!strcmp(uri, "/")) {
-            z = read_uri_file(settings->home_dir->s, "/index.html", resp);
+            z = read_uri_file(settings->home_dir->s, "/index.html", resp->body);
             if (z == -1) {
-                z = read_uri_file(settings->home_dir->s, "/index.htm", resp);
+                z = read_uri_file(settings->home_dir->s, "/index.htm", resp->body);
                 if (z == -1) {
-                    z = read_uri_file(settings->home_dir->s, "/default.html", resp);
+                    z = read_uri_file(settings->home_dir->s, "/default.html", resp->body);
                     if (z == -1) {
-                        z = read_uri_file(settings->home_dir->s, "/default.htm", resp);
+                        z = read_uri_file(settings->home_dir->s, "/default.htm", resp->body);
                     }
                 }
             }
         } else {
-            z = read_uri_file(settings->home_dir->s, uri, resp);
+            z = read_uri_file(settings->home_dir->s, uri, resp->body);
         }
 
         if (z == -1) {
@@ -239,16 +250,25 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         }
         return;
     }
+    if (!strcmp(method, "POST")) {
+        lk_httpresponse_add_header(resp, "Content-Type", "text/html");
+        lk_buffer_append(resp->body, html_start, strlen(html_start));
+        lk_buffer_append_sz(resp->body, "<pre>\n");
+        lk_buffer_append(resp->body, req->body->bytes, req->body->bytes_len);
+        lk_buffer_append_sz(resp->body, "\n</pre>\n");
+        lk_buffer_append(resp->body, html_end, strlen(html_end));
+        return;
+    }
 }
 
-// Read <home_dir>/<uri> file into response body.
+// Read <home_dir>/<uri> file into buffer.
 // Returns 0 for success, -1 for error.
-int read_uri_file(char *home_dir, char *uri, LKHttpResponse *resp) {
+int read_uri_file(char *home_dir, char *uri, LKBuffer *buf) {
     // uri_path = home_dir + uri
     // Ex. "/path/to" + "/index.html"
     LKString *uri_path = lk_string_new(home_dir);
     lk_string_append(uri_path, uri);
-    int z = lk_readfile(uri_path->s, resp->body);
+    int z = lk_readfile(uri_path->s, buf);
     lk_string_free(uri_path);
     return z;
 }

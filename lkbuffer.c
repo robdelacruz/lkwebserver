@@ -53,6 +53,10 @@ int lk_buffer_append(LKBuffer *buf, char *bytes, size_t len) {
     return 0;
 }
 
+int lk_buffer_append_sz(LKBuffer *buf, char *s) {
+    return lk_buffer_append(buf, s, strlen(s));
+}
+
 // Append to buf using asprintf().
 // Can handle all string lengths without truncating, but less
 // efficient as it allocs/deallocs memory.

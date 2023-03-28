@@ -115,21 +115,24 @@ void lk_socketreader_free(LKSocketReader *sr) {
 }
 
 // Read one line from buffered socket, including the \n char, \0 terminated.
-// Returns num bytes read or -1 for error.
-ssize_t lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len) {
+// Return 0 for success, -1 for error.
+// On return, ret_nreat contains the number of bytes received.
+int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size_t *ret_nread) {
     assert(dst_len > 2); // Reserve space for \n and \0.
     assert(sr->buf_size >= sr->buf_len);
     assert(sr->buf_len >= sr->next_read_pos);
 
     if (sr->sockclosed) {
+        *ret_nread = 0;
         return 0;
     }
     if (dst_len <= 2) {
+        *ret_nread = 0;
         errno = EINVAL;
         return -1;
     }
 
-    int nread = 0;
+    size_t nread = 0;
     while (nread < dst_len-1) { // leave space for null terminator
         // If no buffer chars available, read from socket.
         if (sr->next_read_pos >= sr->buf_len) {
@@ -152,6 +155,7 @@ ssize_t lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len) 
             if (z == -1) {
                 assert(nread <= dst_len-1);
                 dst[nread] = '\0';
+                *ret_nread = nread;
                 return z;
             }
             sr->buf_len = z;
@@ -176,10 +180,40 @@ ssize_t lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len) 
 readline_end:
     assert(nread <= dst_len-1);
     dst[nread] = '\0';
-    return nread;
+
+    *ret_nread = nread;
+    return 0;
 }
 
 int lk_socketreader_readbytes(LKSocketReader *sr, char *dst, size_t count, size_t *ret_nread) {
+    size_t nread = 0;
+
+    // Copy any unread buffer bytes into dst.
+    if (sr->next_read_pos < sr->buf_len) {
+        int ncopy = sr->buf_len - sr->next_read_pos;
+        if (ncopy > count) {
+            ncopy = count;
+        }
+        memcpy(dst, sr->buf + sr->next_read_pos, ncopy);
+        sr->next_read_pos += ncopy;
+        nread += ncopy;
+    }
+
+    // Read remaining bytes from socket until count reached.
+    assert(count >= nread);
+    if (count == nread) {
+        *ret_nread = nread;
+        return 0;
+    }
+    size_t sock_nread = 0;
+    int z = lk_sock_recv(sr->sock, dst, count-nread, &sock_nread);
+    if (z < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        *ret_nread = nread;
+        return z;
+    }
+    nread += sock_nread;
+
+    *ret_nread = nread;
     return 0;
 }
 
@@ -255,14 +289,15 @@ void lk_httprequest_debugprint(LKHttpRequest *req) {
 
     printf("Headers:\n");
     for (int i=0; i < req->headers->items_len; i++) {
-        printf("%s: %s\n", req->headers->items[i].k->s, (char *)req->headers->items[i].v);
+        LKString *v = req->headers->items[i].v;
+        printf("%s: %s\n", req->headers->items[i].k->s, v->s);
     }
 
-    printf("Body:\n");
+    printf("Body:\n---\n");
     for (int i=0; i < req->body->bytes_len; i++) {
         putchar(req->body->bytes[i]);
     }
-    printf("\n");
+    printf("\n---\n");
 }
 
 
@@ -327,9 +362,6 @@ void parse_request_line(char *line, LKHttpRequest *req) {
     lk_string_assign(req->version, version);
 
     free(linetmp);
-}
-
-void parse_body(char *bodybytes, size_t bodybytes_len, LKHttpRequest *req) {
 }
 
 // Parse header line in the format Ex. User-Agent: browser
@@ -404,17 +436,26 @@ void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line) {
         parse_header_line(parser, line, parser->req);
         return;
     }
-
-    // Body bytes
-    if (!parser->body_complete) {
-        lk_buffer_append(parser->req->body, line, strlen(line));
-
-        if (parser->req->body->bytes_len >= parser->content_length) {
-            parser->body_complete = 1;
-        }
-    }
 }
 
+// Parse sequence of bytes into request body. Compile results into parser->req.
+// You can check the state of the parser through the following fields:
+// parser->head_complete   Request Line and Headers complete
+// parser->body_complete   httprequest is complete
+void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, size_t buf_len) {
+    // Head should be parsed line by line. Call parse_line() instead.
+    if (!parser->head_complete) {
+        return;
+    }
+    if (parser->body_complete) {
+        return;
+    }
+
+    lk_buffer_append(parser->req->body, buf, buf_len);
+    if (parser->req->body->bytes_len >= parser->content_length) {
+        parser->body_complete = 1;
+    }
+}
 
 /** httpresp functions **/
 
@@ -482,14 +523,15 @@ void lk_httpresponse_debugprint(LKHttpResponse *resp) {
 
     printf("Headers:\n");
     for (int i=0; i < resp->headers->items_len; i++) {
-        printf("%s: %s\n", resp->headers->items[i].k->s, (char *)resp->headers->items[i].v);
+        LKString *v = resp->headers->items[i].v;
+        printf("%s: %s\n", resp->headers->items[i].k->s, v->s);
     }
 
-    printf("Body:\n");
+    printf("Body:\n---\n");
     for (int i=0; i < resp->body->bytes_len; i++) {
         putchar(resp->body->bytes[i]);
     }
-    printf("\n");
+    printf("\n---\n");
 }
 
 // Open and read entire file contents into buf.

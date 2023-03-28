@@ -35,8 +35,10 @@ void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx);
 void remove_clientcontext(LKHttpClientContext **pphead, int sock);
 
 void read_request_from_client(LKHttpServer *server, int clientfd);
+int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx);
+int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx);
 int ends_with_newline(char *s);
-void process_line(LKHttpServer *server, LKHttpClientContext *ctx, char *line);
+void process_request(LKHttpServer *server, LKHttpClientContext *ctx);
 
 void send_response_to_client(LKHttpServer *server, int clientfd);
 int send_buf_bytes(int sock, LKBuffer *buf);
@@ -224,37 +226,59 @@ void read_request_from_client(LKHttpServer *server, int clientfd) {
     assert(ctx->sr->sock == clientfd);
 
     while (1) {
-        char buf[1000];
-        int z = lk_socketreader_readline(ctx->sr, buf, sizeof buf);
-        if (z == 0) {
-            break;
-        }
-        if (z == -1) {
-            lk_print_err("lksocketreader_readline()");
-            break;
-        }
-        assert(buf[z] == '\0');
-
-        // If there's a previous partial line, combine it with current line.
-        if (ctx->partial_line->s_len > 0) {
-            lk_string_append(ctx->partial_line, buf);
-            if (ends_with_newline(ctx->partial_line->s)) {
-                process_line(server, ctx, ctx->partial_line->s);
-                lk_string_assign(ctx->partial_line, "");
+        if (!ctx->reqparser->head_complete) {
+            int z = read_and_parse_line(server, ctx);
+            if (z != 0) {
+                break;
             }
-            continue;
+        } else {
+            int z = read_and_parse_bytes(server, ctx);
+            if (z != 0) {
+                break;
+            }
         }
 
-        // If current line is only partial line (not newline terminated), remember it for
-        // next read.
-        if (!ends_with_newline(buf)) {
-            lk_string_assign(ctx->partial_line, buf);
-            continue;
+        if (ctx->reqparser->body_complete) {
+            process_request(server, ctx);
         }
-
-        // Current line is complete.
-        process_line(server, ctx, buf);
     }
+}
+
+// Read and parse one request line from client socket.
+// Return 0 if line was read, 1 if no data, < 0 for socket error.
+int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx) {
+    char buf[1000];
+    size_t nread;
+    int z = lk_socketreader_readline(ctx->sr, buf, sizeof buf, &nread);
+    if (z == -1) {
+        lk_print_err("lksocketreader_readline()");
+        return z;
+    }
+    if (nread == 0) {
+        return 1;
+    }
+    assert(buf[nread] == '\0');
+
+    // If there's a previous partial line, combine it with current line.
+    if (ctx->partial_line->s_len > 0) {
+        lk_string_append(ctx->partial_line, buf);
+        if (ends_with_newline(ctx->partial_line->s)) {
+            lk_httprequestparser_parse_line(ctx->reqparser, ctx->partial_line->s);
+            lk_string_assign(ctx->partial_line, "");
+        }
+        return 0;
+    }
+
+    // If current line is only partial line (not newline terminated), remember it for
+    // next read.
+    if (!ends_with_newline(buf)) {
+        lk_string_assign(ctx->partial_line, buf);
+        return 0;
+    }
+
+    // Current line is complete.
+    lk_httprequestparser_parse_line(ctx->reqparser, buf);
+    return 0;
 }
 
 // Return whether string ends with \n char.
@@ -269,29 +293,45 @@ int ends_with_newline(char *s) {
     return 0;
 }
 
-void process_line(LKHttpServer *server, LKHttpClientContext *ctx, char *line) {
-    lk_httprequestparser_parse_line(ctx->reqparser, line);
-    if (ctx->reqparser->body_complete) {
-        LKHttpRequest *req = ctx->reqparser->req;
-        printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
-            req->method->s, req->uri->s, 200);
-
-        ctx->resp = lk_httpresponse_new();
-        
-        LKHttpHandlerFunc handler_func = server->http_handler_func;
-        if (handler_func) {
-            (*handler_func)(server->handler_ctx, req, ctx->resp);
-            lk_httpresponse_finalize(ctx->resp);
-        } else {
-            // If no handler, return default 200 OK response.
-            ctx->resp->status = 200;
-            lk_string_assign(ctx->resp->statustext, "Default OK");
-            lk_string_assign(ctx->resp->version, "HTTP/1.0");
-            lk_httpresponse_finalize(ctx->resp);
-        }
-        FD_SET(ctx->sock, &server->writefds);
-        return;
+// Read and parse the next sequence of bytes from client socket.
+// Return 0 if bytes were read, 1 if no data, < 0 for socket error.
+int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx) {
+    char buf[2048];
+    size_t nread;
+    int z = lk_socketreader_readbytes(ctx->sr, buf, sizeof buf, &nread);
+    if (z == -1) {
+        lk_print_err("lksocketreader_readbytes()");
+        return z;
     }
+    if (nread == 0) {
+        return 1;
+    }
+
+    lk_httprequestparser_parse_bytes(ctx->reqparser, buf, nread);
+    return 0;
+}
+
+
+void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
+    LKHttpRequest *req = ctx->reqparser->req;
+    printf("127.0.0.1 [11/Mar/2023 14:05:46] \"%s %s HTTP/1.1\" %d\n", 
+        req->method->s, req->uri->s, 200);
+
+    ctx->resp = lk_httpresponse_new();
+    
+    LKHttpHandlerFunc handler_func = server->http_handler_func;
+    if (handler_func) {
+        (*handler_func)(server->handler_ctx, req, ctx->resp);
+        lk_httpresponse_finalize(ctx->resp);
+    } else {
+        // If no handler, return default 200 OK response.
+        ctx->resp->status = 200;
+        lk_string_assign(ctx->resp->statustext, "Default OK");
+        lk_string_assign(ctx->resp->version, "HTTP/1.0");
+        lk_httpresponse_finalize(ctx->resp);
+    }
+    FD_SET(ctx->sock, &server->writefds);
+    return;
 }
 
 void send_response_to_client(LKHttpServer *server, int clientfd) {
