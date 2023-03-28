@@ -17,6 +17,8 @@ To run:
 
     $ ./lkws <home directory>
 
+Compiles and runs only on Linux (for now)
+
 ## Todo
 
 - better name for 'lkws'?
