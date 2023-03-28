@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <time.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -321,6 +322,20 @@ int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx) {
     return 0;
 }
 
+#define TIME_STRING_SIZE 50
+void get_localtime_string(char *time_str, size_t time_str_len) {
+    time_t t = time(NULL);
+    struct tm tmtime; 
+    void *pz = localtime_r(&t, &tmtime);
+    if (pz != NULL) {
+        int z = strftime(time_str, time_str_len, "%d/%b/%Y %H:%M:%S", &tmtime);
+        if (z == 0) {
+            sprintf(time_str, "???");
+        }
+    } else {
+        sprintf(time_str, "???");
+    }
+}
 
 void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
     assert(ctx->reqparser->req);
@@ -339,13 +354,17 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
         lk_string_assign(resp->version, "HTTP/1.0");
         lk_httpresponse_finalize(resp);
     }
+
+    char time_str[TIME_STRING_SIZE];
+    get_localtime_string(time_str, sizeof(time_str));
+
     printf("%s [%s] \"%s %s %s\" %d\n", 
-        ctx->client_ipaddr->s, "(28/Mar/2023 14:05:46)",
+        ctx->client_ipaddr->s, time_str,
         req->method->s, req->uri->s, resp->version->s,
         resp->status);
     if (resp->status >= 500 && resp->status < 600 && resp->statustext->s_len > 0) {
         printf("%s [%s] %d - %s\n", 
-            "(127.0.0.1)", "(28/Mar/2023 14:05:46)",
+            ctx->client_ipaddr->s, time_str,
             resp->status, resp->statustext->s);
     }
 
