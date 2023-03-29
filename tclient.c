@@ -10,16 +10,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include "lklib.h"
 #include "lknet.h"
-
-// Print the last error message corresponding to errno.
-void print_err(char *s) {
-    fprintf(stderr, "%s: %s\n", s, strerror(errno));
-}
-void exit_err(char *s) {
-    print_err(s);
-    exit(1);
-}
 
 ssize_t sendbytes(int sock, char *buf, size_t count);
 ssize_t recvbytes(int sock, char *buf, size_t count);
@@ -43,18 +35,18 @@ int main(int argc, char *argv[]) {
     hints.ai_flags = 0;
     z = getaddrinfo(server_domain, server_port, &hints, &servaddr);
     if (z != 0) {
-        exit_err("getaddrinfo()");
+        lk_exit_err("getaddrinfo()");
     }
 
     // Server socket
     sock = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
     if (sock == -1) {
-        exit_err("socket()");
+        lk_exit_err("socket()");
     }
 
     z = connect(sock, servaddr->ai_addr, servaddr->ai_addrlen);
     if (z != 0) {
-        exit_err("connect()");
+        lk_exit_err("connect()");
     }
 
     freeaddrinfo(servaddr);
@@ -76,20 +68,20 @@ int main(int argc, char *argv[]) {
     printf("Sending request...\n");
     z = sendbytes(sock, reqmsg, strlen(reqmsg));
     if (z == -1) {
-        exit_err("sendbytes()");
+        lk_exit_err("sendbytes()");
     }
 
     printf("Receiving response...\n");
     z = recvbytes(sock, respmsg, sizeof(respmsg));
     if (z == -1) {
-        exit_err("recvbytes()");
+        lk_exit_err("recvbytes()");
     }
     respmsg[z] = '\0';
     printf("%s", respmsg);
 
     z = close(sock);
     if (z == -1) {
-        exit_err("close()");
+        lk_exit_err("close()");
     }
 
     return 0;

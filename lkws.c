@@ -15,19 +15,17 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include "lklib.h"
 #include "lknet.h"
 
 #define LISTEN_PORT "5000"
-
-void print_err(char *s);
-void exit_err(char *s);
-void handle_sigint(int sig);
-void handle_sigchld(int sig);
 
 void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
 int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
 int is_valid_http_method(char *method);
 char *fileext(char *filepath);
+void handle_sigint(int sig);
+void handle_sigchld(int sig);
 
 typedef struct {
     LKString    *home_dir;
@@ -35,20 +33,8 @@ typedef struct {
     LKStringMap *aliases;
 } FileHandlerSettings;
 
-FileHandlerSettings *create_filehandler_settings(char *sz_home_dir, char *sz_cgi_dir) {
-    FileHandlerSettings *fhs = malloc(sizeof(FileHandlerSettings));
-    fhs->home_dir = lk_string_new(sz_home_dir);
-    fhs->cgi_dir = lk_string_new(sz_cgi_dir);
-    fhs->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
-    return fhs;
-}
-
-void free_filehandler_settings(FileHandlerSettings *settings) {
-    lk_string_free(settings->home_dir);
-    lk_string_free(settings->cgi_dir);
-    lk_stringmap_free(settings->aliases);
-    free(settings);
-}
+FileHandlerSettings *create_filehandler_settings(char *sz_home_dir, char *sz_cgi_dir);
+void free_filehandler_settings(FileHandlerSettings *settings);
 
 int main(int argc, char *argv[]) {
     int z;
@@ -64,23 +50,23 @@ int main(int argc, char *argv[]) {
     hints.ai_flags = AI_PASSIVE;
     z = getaddrinfo("localhost", LISTEN_PORT, &hints, &servaddr);
     if (z != 0) {
-        exit_err("getaddrinfo()");
+        lk_exit_err("getaddrinfo()");
     }
 
     int s0 = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
     if (s0 == -1) {
-        exit_err("socket()");
+        lk_exit_err("socket()");
     }
 
     int yes=1;
     z = setsockopt(s0, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
     if (s0 == -1) {
-        exit_err("setsockopt(SO_REUSEADDR)");
+        lk_exit_err("setsockopt(SO_REUSEADDR)");
     }
 
     z = bind(s0, servaddr->ai_addr, servaddr->ai_addrlen);
     if (z != 0) {
-        exit_err("bind()");
+        lk_exit_err("bind()");
     }
 
     // Command line params: webserver <home_dir> <cgi_dir>
@@ -104,7 +90,7 @@ int main(int argc, char *argv[]) {
 
     z = lk_httpserver_serve(httpserver, s0);
     if (z == -1) {
-        exit_err("lk_httpserver_serve()");
+        lk_exit_err("lk_httpserver_serve()");
     }
 
     // Code doesn't reach here.
@@ -112,15 +98,6 @@ int main(int argc, char *argv[]) {
     lk_httpserver_free(httpserver);
     close(s0);
     return 0;
-}
-
-// Print the last error message corresponding to errno.
-void print_err(char *s) {
-    fprintf(stderr, "%s: %s\n", s, strerror(errno));
-}
-void exit_err(char *s) {
-    print_err(s);
-    exit(1);
 }
 
 void handle_sigint(int sig) {
@@ -136,11 +113,24 @@ void handle_sigchld(int sig) {
     errno = tmp_errno;
 }
 
+FileHandlerSettings *create_filehandler_settings(char *sz_home_dir, char *sz_cgi_dir) {
+    FileHandlerSettings *fhs = malloc(sizeof(FileHandlerSettings));
+    fhs->home_dir = lk_string_new(sz_home_dir);
+    fhs->cgi_dir = lk_string_new(sz_cgi_dir);
+    fhs->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
+    return fhs;
+}
+
+void free_filehandler_settings(FileHandlerSettings *settings) {
+    lk_string_free(settings->home_dir);
+    lk_string_free(settings->cgi_dir);
+    lk_stringmap_free(settings->aliases);
+    free(settings);
+}
+
+
 // Generate an http response to an http request.
 void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp) {
-//    printf("serve_file_handler():\n");
-//    lk_httprequest_debugprint(req);
-
     int z;
     FileHandlerSettings *settings = handler_ctx;
 

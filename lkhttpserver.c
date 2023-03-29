@@ -50,11 +50,6 @@ void terminate_client_session(LKHttpServer *server, int clientfd);
 
 /*** LKHttpServer functions ***/
 
-// Print the last error message corresponding to errno.
-void lk_print_err(char *s) {
-    fprintf(stderr, "%s: %s\n", s, strerror(errno));
-}
-
 LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc, void *handler_ctx) {
     LKHttpServer *server = malloc(sizeof(LKHttpServer));
     server->ctxhead = NULL;

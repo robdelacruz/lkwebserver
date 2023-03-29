@@ -1,6 +1,9 @@
 #ifndef LKLIB_H
 #define LKLIB_H
 
+void lk_print_err(char *s);
+void lk_exit_err(char *s);
+
 /*** LKString ***/
 typedef struct {
     char *s;
