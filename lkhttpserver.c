@@ -31,7 +31,6 @@ struct httpclientcontext {
 };
 
 // local functions
-void lk_print_err(char *s);
 LKHttpClientContext *lk_clientcontext_new(int sock, struct sockaddr *sa);
 void lk_clientcontext_free(LKHttpClientContext *ctx);
 void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx);

@@ -11,6 +11,8 @@ typedef struct {
     size_t s_size;
 } LKString;
 
+typedef struct lkstringlist LKStringList;
+
 LKString *lk_string_new(char *s);
 LKString *lk_string_size_new(size_t size);
 void lk_string_free(LKString *lks); 
@@ -18,9 +20,18 @@ void lk_string_voidp_free(void *plkstr);
 
 void lk_string_assign(LKString *lks, char *s);
 void lk_string_sprintf(LKString *lks, char *fmt, ...);
+void lk_string_append_sprintf(LKString *lks, char *fmt, ...);
 void lk_string_append(LKString *lks, char *s);
+
 int lk_string_sz_equal(LKString *lks, char *s);
 int lk_string_equal(LKString *lks1, LKString *lks2);
+int lk_string_starts_with(LKString *lks, char *s);
+int lk_string_ends_with(LKString *lks, char *s);
+
+void lk_string_trim(LKString *lks);
+void lk_string_chop_start(LKString *lks, char *s);
+void lk_string_chop_end(LKString *lks, char *s);
+LKStringList *lk_string_split(LKString *lks, char *s);
 
 
 /*** LKStringMap ***/
@@ -61,7 +72,7 @@ void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...);
 
 
 /*** LKStringList ***/
-typedef struct {
+typedef struct lkstringlist {
     LKString **items;
     size_t items_len;
     size_t items_size;

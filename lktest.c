@@ -66,6 +66,12 @@ void lkstring_test() {
     lk_string_free(lks);
     lk_string_free(lks2);
 
+    lks = lk_string_new("prompt: ");
+    lk_string_append_sprintf(lks, "a:%d, b:%d, c:%d", 1, 2, 3);
+    assert(lk_string_sz_equal(lks, "prompt: a:1, b:2, c:3"));
+    assert(!lk_string_sz_equal(lks, "prompt: a: 1, b:2, c:3"));
+    lk_string_free(lks);
+
     // Test strings larger than LK_STRING_BUF_SIZE
     lks = lk_string_new("");
     char sbuf[2000];
@@ -84,6 +90,81 @@ void lkstring_test() {
     assert(lks->s[lks->s_len-2] == 'a');
     assert(lks->s[lks->s_len-3] == 'a');
     assert(lks->s[lks->s_len-4] == 'a');
+    lk_string_free(lks);
+
+    lks = lk_string_new("abcdefghijkl mnopqrst");
+    assert(lk_string_starts_with(lks, "abc"));
+    assert(lk_string_starts_with(lks, "abcdefghijkl mnopqrst"));
+    assert(!lk_string_starts_with(lks, "abcdefghijkl mnopqrstuvwxyz"));
+    assert(!lk_string_starts_with(lks, "abcdefghijkl mnopqrst "));
+    assert(lk_string_starts_with(lks, ""));
+
+    assert(lk_string_ends_with(lks, "rst"));
+    assert(lk_string_ends_with(lks, " mnopqrst"));
+    assert(lk_string_ends_with(lks, "abcdefghijkl mnopqrst"));
+    assert(!lk_string_ends_with(lks, " abcdefghijkl mnopqrst"));
+    assert(lk_string_ends_with(lks, ""));
+
+    lk_string_assign(lks, "");
+    assert(lk_string_starts_with(lks, ""));
+    assert(lk_string_ends_with(lks, ""));
+    assert(!lk_string_starts_with(lks, "a"));
+    assert(!lk_string_ends_with(lks, "a"));
+    lk_string_free(lks);
+
+    lks = lk_string_new("  abc  ");
+    lk_string_trim(lks);
+    assert(lk_string_sz_equal(lks, "abc"));
+
+    lk_string_assign(lks, " \tabc \n  ");
+    lk_string_trim(lks);
+    assert(lk_string_sz_equal(lks, "abc"));
+
+    lk_string_assign(lks, "   ");
+    lk_string_trim(lks);
+    assert(lk_string_sz_equal(lks, ""));
+    lk_string_free(lks);
+
+    lks = lk_string_new("/testsite/");
+    lk_string_chop_start(lks, "abc");
+    assert(lk_string_sz_equal(lks, "/testsite/"));
+    lk_string_chop_start(lks, "");
+    assert(lk_string_sz_equal(lks, "/testsite/"));
+    lk_string_chop_start(lks, "///");
+    assert(lk_string_sz_equal(lks, "/testsite/"));
+
+    lk_string_chop_start(lks, "/");
+    assert(lk_string_sz_equal(lks, "testsite/"));
+    lk_string_chop_start(lks, "test");
+    assert(lk_string_sz_equal(lks, "site/"));
+    lk_string_chop_start(lks, "si1");
+    assert(lk_string_sz_equal(lks, "site/"));
+
+    lk_string_assign(lks, "/testsite/");
+    lk_string_chop_end(lks, "abc");
+    assert(lk_string_sz_equal(lks, "/testsite/"));
+    lk_string_chop_end(lks, "");
+    assert(lk_string_sz_equal(lks, "/testsite/"));
+    lk_string_chop_end(lks, "///");
+    assert(lk_string_sz_equal(lks, "/testsite/"));
+
+    lk_string_chop_end(lks, "/");
+    assert(lk_string_sz_equal(lks, "/testsite"));
+    lk_string_chop_end(lks, "site");
+    assert(lk_string_sz_equal(lks, "/test"));
+    lk_string_chop_end(lks, "1st");
+    assert(lk_string_sz_equal(lks, "/test"));
+
+    lk_string_assign(lks, "");
+    lk_string_chop_start(lks, "");
+    assert(lk_string_sz_equal(lks, ""));
+    lk_string_chop_end(lks, "");
+    assert(lk_string_sz_equal(lks, ""));
+    lk_string_chop_start(lks, "abc");
+    assert(lk_string_sz_equal(lks, ""));
+    lk_string_chop_end(lks, "def");
+    assert(lk_string_sz_equal(lks, ""));
+
     lk_string_free(lks);
 
     printf("Done.\n");

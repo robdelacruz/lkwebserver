@@ -117,6 +117,13 @@ FileHandlerSettings *create_filehandler_settings(char *sz_home_dir, char *sz_cgi
     FileHandlerSettings *fhs = malloc(sizeof(FileHandlerSettings));
     fhs->home_dir = lk_string_new(sz_home_dir);
     fhs->cgi_dir = lk_string_new(sz_cgi_dir);
+
+    // "/folder/testsite/" becomes "/folder/testsite" (no trailing '/')
+    // because it will be combined with uri which has a leading '/'
+    // "/folder/testsite" + "/index.html"
+    lk_string_chop_end(fhs->home_dir, "/");
+    lk_string_chop_end(fhs->cgi_dir, "/");
+
     fhs->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
     return fhs;
 }
