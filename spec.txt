@@ -1,3 +1,15 @@
+command line:
+
+$ lkws <home_dir>
+(default cgi directory is cgi-bin)
+
+$ lkws --homedir=testsite --cgidir=cgi-bin
+
+$ lkws testsite/ -a /latest=/latest.html -a about=/about.html
+$ lkws testsite/ -a latest=foo/latest.html -a about=about.html
+(pass aliases /latest, /about)
+
+
 python simplehttpserver returns the following:
 127.0.0.1 - - [11/Mar/2023 14:05:46] "GET /index3.html HTTP/1.1" 200 - 
 
