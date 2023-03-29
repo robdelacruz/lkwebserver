@@ -22,7 +22,7 @@
 struct httpclientcontext {
     int sock;                         // client socket
     struct sockaddr *client_sa;       // client address
-    LKString *client_ipaddr;           // client ip address string
+    LKString *client_ipaddr;          // client ip address string
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequestParser *reqparser;   // parser for httprequest
     LKString *partial_line;

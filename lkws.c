@@ -39,7 +39,7 @@ FileHandlerSettings *create_filehandler_settings(char *sz_home_dir, char *sz_cgi
     FileHandlerSettings *fhs = malloc(sizeof(FileHandlerSettings));
     fhs->home_dir = lk_string_new(sz_home_dir);
     fhs->cgi_dir = lk_string_new(sz_cgi_dir);
-    fhs->aliases = lk_stringmap_new();
+    fhs->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
     return fhs;
 }
 
@@ -91,8 +91,9 @@ int main(int argc, char *argv[]) {
     if (argc > 2) cgi_dir = argv[2];
 
     FileHandlerSettings *settings = create_filehandler_settings(home_dir, cgi_dir);
-    lk_stringmap_set(settings->aliases, "latest", "/latest.html");
-    lk_stringmap_set(settings->aliases, "about", "/about.html");
+    lk_stringmap_set(settings->aliases, "/latest", lk_string_new("/latest.html"));
+    lk_stringmap_set(settings->aliases, "/about", lk_string_new("/about.html"));
+    lk_stringmap_set(settings->aliases, "/abc", lk_string_new("/abc.html"));
 
     LKHttpServer *httpserver = lk_httpserver_new(serve_file_handler, (void*) settings);
 
@@ -197,23 +198,29 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         lk_httpresponse_add_header(resp, "Content-Type", content_type->s);
         lk_string_free(content_type);
 
+        // Use alias if there's a match for uri.
+        // Ex. uri: "/latest" => "/latest.html"
+        LKString *alias_uri = lk_stringmap_get(settings->aliases, uri);
+        if (alias_uri != NULL) {
+            uri = alias_uri->s;
+        }
+
         // if no page given, try opening index.html, ...
         //$$ Better way to do this?
         if (!strcmp(uri, "/")) {
-            z = read_uri_file(settings->home_dir->s, "/index.html", resp->body);
-            if (z == -1) {
+            while (1) {
+                z = read_uri_file(settings->home_dir->s, "/index.html", resp->body);
+                if (z == 0) break;
                 z = read_uri_file(settings->home_dir->s, "/index.htm", resp->body);
-                if (z == -1) {
-                    z = read_uri_file(settings->home_dir->s, "/default.html", resp->body);
-                    if (z == -1) {
-                        z = read_uri_file(settings->home_dir->s, "/default.htm", resp->body);
-                    }
-                }
+                if (z == 0) break;
+                z = read_uri_file(settings->home_dir->s, "/default.html", resp->body);
+                if (z == 0) break;
+                z = read_uri_file(settings->home_dir->s, "/default.htm", resp->body);
+                break;
             }
         } else {
             z = read_uri_file(settings->home_dir->s, uri, resp->body);
         }
-
         if (z == -1) {
             // uri file not found
             resp->status = 404;
@@ -221,6 +228,7 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
             lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
             lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", uri);
         }
+
         return;
     }
 #if 0
