@@ -191,7 +191,7 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         }
 
         LKString *content_type = lk_string_new("");
-        lk_string_sprintf(content_type, "text/%s;", fileext(uri));
+        lk_string_assign_sprintf(content_type, "text/%s;", fileext(uri));
         lk_httpresponse_add_header(resp, "Content-Type", content_type->s);
         lk_string_free(content_type);
 
@@ -221,7 +221,7 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
         if (z == -1) {
             // uri file not found
             resp->status = 404;
-            lk_string_sprintf(resp->statustext, "File not found '%s'", uri);
+            lk_string_assign_sprintf(resp->statustext, "File not found '%s'", uri);
             lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
             lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", uri);
         }
@@ -241,7 +241,7 @@ void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *r
 #endif
 
     resp->status = 501;
-    lk_string_sprintf(resp->statustext, "Unsupported method ('%s')", method);
+    lk_string_assign_sprintf(resp->statustext, "Unsupported method ('%s')", method);
 
     lk_buffer_append(resp->body, html_error_start, strlen(html_error_start));
     lk_buffer_append_sprintf(resp->body, "<p>Error code %d.</p>\n", resp->status);

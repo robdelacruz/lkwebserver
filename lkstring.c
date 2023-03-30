@@ -10,6 +10,7 @@
 #include "lklib.h"
 
 #define LK_STRING_BUF_SIZE 1024
+#define N_GROW_STRING 20
 
 void zero_s(LKString *lks) {
     memset(lks->s, 0, lks->s_size+1);
@@ -63,14 +64,14 @@ void lk_string_assign(LKString *lks, char *s) {
     lks->s_len = s_len;
 }
 
-void lk_string_sprintf(LKString *lks, char *fmt, ...) {
+void lk_string_assign_sprintf(LKString *lks, char *fmt, ...) {
     char sbuf[LK_STRING_BUF_SIZE];
 
     va_list args;
     va_start(args, fmt);
     int z = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
-    if (z < 0) return;
     va_end(args);
+    if (z < 0) return;
 
     // If snprintf() truncated output to sbuf due to space,
     // use asprintf() instead.
@@ -79,8 +80,8 @@ void lk_string_sprintf(LKString *lks, char *fmt, ...) {
         char *ps;
         va_start(args, fmt);
         int z = vasprintf(&ps, fmt, args);
-        if (z == -1) return;
         va_end(args);
+        if (z == -1) return;
 
         lk_string_assign(lks, ps);
         free(ps);
@@ -97,8 +98,8 @@ void lk_string_append_sprintf(LKString *lks, char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     int z = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
-    if (z < 0) return;
     va_end(args);
+    if (z < 0) return;
 
     // If snprintf() truncated output to sbuf due to space,
     // use asprintf() instead.
@@ -107,8 +108,8 @@ void lk_string_append_sprintf(LKString *lks, char *fmt, ...) {
         char *ps;
         va_start(args, fmt);
         int z = vasprintf(&ps, fmt, args);
-        if (z == -1) return;
         va_end(args);
+        if (z == -1) return;
 
         lk_string_assign(lks, ps);
         free(ps);
@@ -128,6 +129,18 @@ void lk_string_append(LKString *lks, char *s) {
     memset(lks->s + lks->s_len, '\0', s_len+1);
     strncpy(lks->s + lks->s_len, s, s_len);
     lks->s_len = lks->s_len + s_len;
+}
+
+void lk_string_append_char(LKString *lks, char c) {
+    if (lks->s_len + 1 > lks->s_size) {
+        lks->s_size = lks->s_len + N_GROW_STRING;
+        lks->s = realloc(lks->s, lks->s_size+1);
+        memset(lks->s + lks->s_len, '\0', lks->s_size+1 - lks->s_len);
+    }
+
+    lks->s[lks->s_len] = c;
+    lks->s[lks->s_len+1] = '\0';
+    lks->s_len++;
 }
 
 int lk_string_sz_equal(LKString *lks1, char *s2) {
@@ -232,6 +245,28 @@ void lk_string_chop_end(LKString *lks, char *s) {
     lks->s_len = new_len;
 }
 
-LKStringList *lk_string_split(LKString *lks, char *s) {
-    return NULL;
+// Return whether delim matches the first delim_len chars of s.
+int match_delim(char *s, char *delim, size_t delim_len) {
+    return !strncmp(s, delim, delim_len);
+}
+
+LKStringList *lk_string_split(LKString *lks, char *delim) {
+    LKStringList *sl = lk_stringlist_new();
+    size_t delim_len = strlen(delim);
+
+    LKString *segment = lk_string_new("");
+    for (int i=0; i < lks->s_len; i++) {
+        if (match_delim(lks->s + i, delim, delim_len)) {
+            lk_stringlist_append_lkstring(sl, segment);
+            segment = lk_string_new("");
+            i += delim_len-1; // need to -1 to account for for loop incrementor i++
+            continue;
+        }
+
+        lk_string_append_char(segment, lks->s[i]);
+    }
+    lk_stringlist_append_lkstring(sl, segment);
+    printf("segment: '%s'\n", segment->s);
+
+    return sl;
 }

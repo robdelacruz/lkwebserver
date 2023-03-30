@@ -3,6 +3,7 @@
 
 void lk_print_err(char *s);
 void lk_exit_err(char *s);
+char *lk_vasprintf(char *fmt, va_list args);
 
 /*** LKString ***/
 typedef struct {
@@ -19,9 +20,10 @@ void lk_string_free(LKString *lks);
 void lk_string_voidp_free(void *plkstr); 
 
 void lk_string_assign(LKString *lks, char *s);
-void lk_string_sprintf(LKString *lks, char *fmt, ...);
-void lk_string_append_sprintf(LKString *lks, char *fmt, ...);
+void lk_string_assign_sprintf(LKString *lks, char *fmt, ...);
 void lk_string_append(LKString *lks, char *s);
+void lk_string_append_sprintf(LKString *lks, char *fmt, ...);
+void lk_string_append_char(LKString *lks, char c);
 
 int lk_string_sz_equal(LKString *lks, char *s);
 int lk_string_equal(LKString *lks1, LKString *lks2);
@@ -31,7 +33,7 @@ int lk_string_ends_with(LKString *lks, char *s);
 void lk_string_trim(LKString *lks);
 void lk_string_chop_start(LKString *lks, char *s);
 void lk_string_chop_end(LKString *lks, char *s);
-LKStringList *lk_string_split(LKString *lks, char *s);
+LKStringList *lk_string_split(LKString *lks, char *delim);
 
 
 /*** LKStringMap ***/
@@ -80,6 +82,7 @@ typedef struct lkstringlist {
 
 LKStringList *lk_stringlist_new();
 void lk_stringlist_free(LKStringList *sl);
+void lk_stringlist_append_lkstring(LKStringList *sl, LKString *lks);
 void lk_stringlist_append(LKStringList *sl, char *s);
 void lk_stringlist_append_sprintf(LKStringList *sl, const char *fmt, ...);
 LKString *lk_stringlist_get(LKStringList *sl, unsigned int i);

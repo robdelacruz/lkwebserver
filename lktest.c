@@ -55,12 +55,12 @@ void lkstring_test() {
     lk_string_assign(lks2, "");
     assert(!lk_string_equal(lks, lks2));
 
-    lk_string_sprintf(lks2, "abc %s", "def");
+    lk_string_assign_sprintf(lks2, "abc %s", "def");
     assert(!strcmp(lks->s, lks2->s));
     assert(lk_string_equal(lks, lks2));
 
-    lk_string_sprintf(lks, "abc%ddef%d", 123, 456);
-    lk_string_sprintf(lks2, "%s123%s456", "abc", "def");
+    lk_string_assign_sprintf(lks, "abc%ddef%d", 123, 456);
+    lk_string_assign_sprintf(lks2, "%s123%s456", "abc", "def");
     assert(!strcmp(lks->s, lks2->s));
     assert(lk_string_equal(lks, lks2));
     lk_string_free(lks);
@@ -84,7 +84,7 @@ void lkstring_test() {
         assert(lks->s[i] == 'a');
     }
 
-    lk_string_sprintf(lks, "sbuf: %s", sbuf);
+    lk_string_assign_sprintf(lks, "sbuf: %s", sbuf);
     assert(lks->s_len == sizeof(sbuf)-1 + 6);
     assert(strncmp(lks->s, "sbuf: aaaaa", 11) == 0);
     assert(lks->s[lks->s_len-2] == 'a');
@@ -164,7 +164,65 @@ void lkstring_test() {
     assert(lk_string_sz_equal(lks, ""));
     lk_string_chop_end(lks, "def");
     assert(lk_string_sz_equal(lks, ""));
+    lk_string_free(lks);
 
+    lks = lk_string_new("abc");
+    assert(lk_string_sz_equal(lks, "abc"));
+    lk_string_append_char(lks, 'd');
+    assert(lk_string_sz_equal(lks, "abcd"));
+    lk_string_append_char(lks, 'e');
+    lk_string_append_char(lks, 'f');
+    lk_string_append_char(lks, 'g');
+    assert(lk_string_sz_equal(lks, "abcdefg"));
+    assert(lks->s_len == 7);
+    lk_string_free(lks);
+
+    lks = lk_string_new("");
+    LKStringList *parts = lk_string_split(lks, "a");
+    assert(parts->items_len == 1);
+    assert(lk_string_sz_equal(parts->items[0], ""));
+    lk_stringlist_free(parts);
+
+    parts = lk_string_split(lks, "abc");
+    assert(parts->items_len == 1);
+    assert(lk_string_sz_equal(parts->items[0], ""));
+    lk_stringlist_free(parts);
+
+    parts = lk_string_split(lks, "");
+    assert(parts->items_len == 1);
+    assert(lk_string_sz_equal(parts->items[0], ""));
+    lk_stringlist_free(parts);
+
+    lk_string_assign(lks, "abc def ghijkl");
+    parts = lk_string_split(lks, " ");
+    assert(parts->items_len == 3);
+    assert(lk_string_sz_equal(parts->items[0], "abc"));
+    assert(lk_string_sz_equal(parts->items[1], "def"));
+    assert(lk_string_sz_equal(parts->items[2], "ghijkl"));
+    lk_stringlist_free(parts);
+    parts = lk_string_split(lks, "--");
+    assert(parts->items_len == 1);
+    assert(lk_string_sz_equal(parts->items[0], "abc def ghijkl"));
+    lk_stringlist_free(parts);
+
+    lk_string_assign(lks, "12 little kitten 12 web server 12 written in C");
+    parts = lk_string_split(lks, "12 ");
+    assert(parts->items_len == 4);
+    assert(lk_string_sz_equal(parts->items[0], ""));
+    assert(lk_string_sz_equal(parts->items[1], "little kitten "));
+    assert(lk_string_sz_equal(parts->items[2], "web server "));
+    assert(lk_string_sz_equal(parts->items[3], "written in C"));
+    lk_stringlist_free(parts);
+
+    lk_string_assign(lks, "12 little kitten 12 web server 12 written in C 12 ");
+    parts = lk_string_split(lks, "12 ");
+    assert(parts->items_len == 5);
+    assert(lk_string_sz_equal(parts->items[0], ""));
+    assert(lk_string_sz_equal(parts->items[1], "little kitten "));
+    assert(lk_string_sz_equal(parts->items[2], "web server "));
+    assert(lk_string_sz_equal(parts->items[3], "written in C "));
+    assert(lk_string_sz_equal(parts->items[4], ""));
+    lk_stringlist_free(parts);
     lk_string_free(lks);
 
     printf("Done.\n");
@@ -312,7 +370,8 @@ void lkstringlist_test() {
     assert(sl->items_len == 0);
     lk_stringlist_append(sl, "abc");
     lk_stringlist_append_sprintf(sl, "Hello %s", "abc");
-    lk_stringlist_append(sl, "123");
+    LKString *lks123 = lk_string_new("123");
+    lk_stringlist_append_lkstring(sl, lks123);
     assert(sl->items_len == 3);
 
     LKString *s0 = lk_stringlist_get(sl, 0);

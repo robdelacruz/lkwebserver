@@ -8,6 +8,8 @@
 #include <assert.h>
 #include "lklib.h"
 
+#define N_GROW_STRINGLIST 10
+
 LKStringList *lk_stringlist_new() {
     LKStringList *sl = malloc(sizeof(LKStringList));
     sl->items_size = 1; // start with room for n items
@@ -31,39 +33,37 @@ void lk_stringlist_free(LKStringList *sl) {
     free(sl);
 }
 
-#define N_GROW_ITEMS 1
-void lk_stringlist_append(LKStringList *sl, char *s) {
+void lk_stringlist_append_lkstring(LKStringList *sl, LKString *lks) {
     assert(sl->items_len <= sl->items_size);
 
     if (sl->items_len == sl->items_size) {
-        LKString **pitems = realloc(sl->items, (sl->items_size+N_GROW_ITEMS) * sizeof(LKString*));
+        LKString **pitems = realloc(sl->items, (sl->items_size+N_GROW_STRINGLIST) * sizeof(LKString*));
         if (pitems == NULL) {
             return;
         }
         sl->items = pitems;
-        sl->items_size += N_GROW_ITEMS;
+        sl->items_size += N_GROW_STRINGLIST;
     }
-    sl->items[sl->items_len] = lk_string_new(s);
+    sl->items[sl->items_len] = lks;
     sl->items_len++;
 
     assert(sl->items_len <= sl->items_size);
 }
 
+void lk_stringlist_append(LKStringList *sl, char *s) {
+    lk_stringlist_append_lkstring(sl, lk_string_new(s));
+}
+
 void lk_stringlist_append_sprintf(LKStringList *sl, const char *fmt, ...) {
-    int z;
-    char *pstr = NULL;
-
     va_list args;
+    char *ps;
     va_start(args, fmt);
-    z = vasprintf(&pstr, fmt, args);
+    int z = vasprintf(&ps, fmt, args);
     va_end(args);
-
     if (z == -1) return;
 
-    lk_stringlist_append(sl, pstr);
-
-    free(pstr);
-    pstr = NULL;
+    lk_stringlist_append(sl, ps);
+    free(ps);
 }
 
 LKString *lk_stringlist_get(LKStringList *sl, unsigned int i) {
