@@ -41,7 +41,8 @@ void free_filehandler_settings(FileHandlerSettings *settings);
 int main(int argc, char *argv[]) {
     int z;
 
-    signal(SIGINT, handle_sigint);
+    signal(SIGPIPE, SIG_IGN);           // Don't abort on SIGPIPE
+    signal(SIGINT, handle_sigint);      // exit on CTRL-C
     signal(SIGCHLD, handle_sigchld);
 
     // Get this server's address.
@@ -74,6 +75,23 @@ int main(int argc, char *argv[]) {
     // $ lkws /testsite -a latest=/latest.html -a about=/about.html
     FileHandlerSettings *settings = create_filehandler_settings();
     parse_args(argc, argv, settings);
+
+    // If home_dir not specified, use current working directory.
+    if (settings->home_dir->s_len == 0) {
+        char *current_dir = get_current_dir_name();
+        current_dir = NULL;
+        if (current_dir != NULL) {
+            lk_string_assign(settings->home_dir, current_dir);
+            free(current_dir);
+        } else {
+            lk_string_assign(settings->home_dir, ".");
+        }
+    }
+    if (settings->cgi_dir->s_len == 0) {
+        lk_string_append(settings->cgi_dir, "/cgi-bin");
+    }
+    lk_string_prepend(settings->cgi_dir, settings->home_dir->s);
+    printf("home_dir: '%s', cgi_dir: '%s'\n", settings->home_dir->s, settings->cgi_dir->s);
 
     LKHttpServer *httpserver = lk_httpserver_new(serve_file_handler, (void*) settings);
 
@@ -111,9 +129,8 @@ typedef enum {PA_NONE, PA_ALIAS} ParseArgsState;
 
 // $ lkws testsite/ -a /latest=/latest.html -a about=/about.html
 // $ lkws testsite/ -a latest=foo/latest.html -a about=about.html
+// $ lkws testsite/ --cgidir=cgifolder
 void parse_args(int argc, char *argv[], FileHandlerSettings *settings) {
-    LKString *home_dir = NULL;
-    LKString *cgi_dir = NULL;
     ParseArgsState state = PA_NONE;
 
     for (int i=1; i < argc; i++) {
@@ -122,26 +139,33 @@ void parse_args(int argc, char *argv[], FileHandlerSettings *settings) {
             state = PA_ALIAS;
             continue;
         }
+        // --cgidir=cgifolder
+        if (state == PA_NONE && !strncmp(arg, "--cgidir=", 9)) {
+            LKString *lksarg = lk_string_new(arg);
+            LKStringList *parts = lk_string_split(lksarg, "=");
+            if (parts->items_len == 2) {
+                LKString *v = lk_stringlist_get(parts, 1);
+                if (!lk_string_starts_with(v, "/")) {
+                    lk_string_prepend(v, "/");
+                }
+                lk_string_assign(settings->cgi_dir, v->s);
+            }
+            lk_stringlist_free(parts);
+            lk_string_free(lksarg);
+            continue;
+        }
         if (state == PA_ALIAS) {
             parse_args_alias(arg, settings->aliases);
             state = PA_NONE;
             continue;
         }
         assert(state == PA_NONE);
-        if (home_dir == NULL) {
-            home_dir = lk_string_new(arg);
-            continue;
-        }
+        lk_string_assign(settings->home_dir, arg);
+        continue;
     }
 
-    if (home_dir) {
-        lk_string_chop_end(home_dir, "/");
-        settings->home_dir = lk_string_new(home_dir->s);
-    }
-    if (cgi_dir) {
-        lk_string_chop_end(cgi_dir, "/");
-        settings->cgi_dir = lk_string_new(cgi_dir->s);
-    }
+    lk_string_chop_end(settings->home_dir, "/");
+    lk_string_chop_end(settings->cgi_dir, "/");
 }
 
 // Parse and add new alias definition into aliases
@@ -187,18 +211,6 @@ void free_filehandler_settings(FileHandlerSettings *settings) {
 void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp) {
     int z;
     FileHandlerSettings *settings = handler_ctx;
-
-    // If home_dir not specified, use current working directory.
-    if (settings->home_dir->s_len == 0) {
-        char *current_dir = get_current_dir_name();
-        if (current_dir == NULL) {
-            resp->status = 500;
-            lk_string_assign(resp->statustext, "Server error reading directory");
-            return;
-        }
-        lk_string_append(settings->home_dir, current_dir);
-        free(current_dir);
-    }
 
     static char *html_error_start = 
        "<!DOCTYPE html>\n"

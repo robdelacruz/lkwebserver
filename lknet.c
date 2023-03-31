@@ -94,7 +94,7 @@ int lk_sock_recv(int sock, char *buf, size_t count, size_t *ret_nread) {
 int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent) {
     int nsent = 0;
     while (nsent < count) {
-        int z = send(sock, buf+nsent, count-nsent, MSG_DONTWAIT);
+        int z = send(sock, buf+nsent, count-nsent, MSG_DONTWAIT | MSG_NOSIGNAL);
         if (z == 0) {
             break;
         }
