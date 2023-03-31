@@ -25,6 +25,8 @@ void lk_string_append(LKString *lks, char *s);
 void lk_string_append_sprintf(LKString *lks, char *fmt, ...);
 void lk_string_append_char(LKString *lks, char c);
 
+void lk_string_prepend(LKString *lks, char *s);
+
 int lk_string_sz_equal(LKString *lks, char *s);
 int lk_string_equal(LKString *lks1, LKString *lks2);
 int lk_string_starts_with(LKString *lks, char *s);

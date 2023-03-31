@@ -20,20 +20,22 @@
 
 #define LISTEN_PORT "5000"
 
-void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
-int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
-int is_valid_http_method(char *method);
-char *fileext(char *filepath);
-void handle_sigint(int sig);
-void handle_sigchld(int sig);
-
 typedef struct {
     LKString    *home_dir;
     LKString    *cgi_dir;
     LKStringMap *aliases;
 } FileHandlerSettings;
 
-FileHandlerSettings *create_filehandler_settings(char *sz_home_dir, char *sz_cgi_dir);
+void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
+int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
+int is_valid_http_method(char *method);
+char *fileext(char *filepath);
+void handle_sigint(int sig);
+void handle_sigchld(int sig);
+void parse_args(int argc, char *argv[], FileHandlerSettings *settings);
+void parse_args_alias(char *arg, LKStringMap *aliases);
+
+FileHandlerSettings *create_filehandler_settings();
 void free_filehandler_settings(FileHandlerSettings *settings);
 
 int main(int argc, char *argv[]) {
@@ -69,17 +71,9 @@ int main(int argc, char *argv[]) {
         lk_exit_err("bind()");
     }
 
-    // Command line params: webserver <home_dir> <cgi_dir>
-    //                      argv[0]   argv[1]    argv[2]
-    char *home_dir = "";
-    char *cgi_dir = "";
-    if (argc > 1) home_dir = argv[1];
-    if (argc > 2) cgi_dir = argv[2];
-
-    FileHandlerSettings *settings = create_filehandler_settings(home_dir, cgi_dir);
-    lk_stringmap_set(settings->aliases, "/latest", lk_string_new("/latest.html"));
-    lk_stringmap_set(settings->aliases, "/about", lk_string_new("/about.html"));
-    lk_stringmap_set(settings->aliases, "/abc", lk_string_new("/abc.html"));
+    // $ lkws /testsite -a latest=/latest.html -a about=/about.html
+    FileHandlerSettings *settings = create_filehandler_settings();
+    parse_args(argc, argv, settings);
 
     LKHttpServer *httpserver = lk_httpserver_new(serve_file_handler, (void*) settings);
 
@@ -113,17 +107,70 @@ void handle_sigchld(int sig) {
     errno = tmp_errno;
 }
 
-FileHandlerSettings *create_filehandler_settings(char *sz_home_dir, char *sz_cgi_dir) {
+typedef enum {PA_NONE, PA_ALIAS} ParseArgsState;
+
+// $ lkws testsite/ -a /latest=/latest.html -a about=/about.html
+// $ lkws testsite/ -a latest=foo/latest.html -a about=about.html
+void parse_args(int argc, char *argv[], FileHandlerSettings *settings) {
+    LKString *home_dir = NULL;
+    LKString *cgi_dir = NULL;
+    ParseArgsState state = PA_NONE;
+
+    for (int i=1; i < argc; i++) {
+        char *arg = argv[i];
+        if (state == PA_NONE && !strcmp(arg, "-a")) {
+            state = PA_ALIAS;
+            continue;
+        }
+        if (state == PA_ALIAS) {
+            parse_args_alias(arg, settings->aliases);
+            state = PA_NONE;
+            continue;
+        }
+        assert(state == PA_NONE);
+        if (home_dir == NULL) {
+            home_dir = lk_string_new(arg);
+            continue;
+        }
+    }
+
+    if (home_dir) {
+        lk_string_chop_end(home_dir, "/");
+        settings->home_dir = lk_string_new(home_dir->s);
+    }
+    if (cgi_dir) {
+        lk_string_chop_end(cgi_dir, "/");
+        settings->cgi_dir = lk_string_new(cgi_dir->s);
+    }
+}
+
+// Parse and add new alias definition into aliases
+// alias definition "/latest=/latest.html" ==> "/latest" : "/latest.html"
+void parse_args_alias(char *arg, LKStringMap *aliases) {
+    LKString *lksarg = lk_string_new(arg);
+    LKStringList *parts = lk_string_split(lksarg, "=");
+    if (parts->items_len == 2) {
+        LKString *k = lk_stringlist_get(parts, 0);
+        LKString *v = lk_stringlist_get(parts, 1);
+
+        if (!lk_string_starts_with(k, "/")) {
+            lk_string_prepend(k, "/");
+        }
+        if (!lk_string_starts_with(v, "/")) {
+            lk_string_prepend(v, "/");
+        }
+        lk_stringmap_set(aliases, k->s, lk_string_new(v->s));
+    }
+
+    lk_stringlist_free(parts);
+    lk_string_free(lksarg);
+}
+
+FileHandlerSettings *create_filehandler_settings() {
     FileHandlerSettings *fhs = malloc(sizeof(FileHandlerSettings));
-    fhs->home_dir = lk_string_new(sz_home_dir);
-    fhs->cgi_dir = lk_string_new(sz_cgi_dir);
-
-    // "/folder/testsite/" becomes "/folder/testsite" (no trailing '/')
-    // because it will be combined with uri which has a leading '/'
-    // "/folder/testsite" + "/index.html"
-    lk_string_chop_end(fhs->home_dir, "/");
-    lk_string_chop_end(fhs->cgi_dir, "/");
-
+    memset(fhs, 0, sizeof(FileHandlerSettings));
+    fhs->home_dir = lk_string_new("");
+    fhs->cgi_dir = lk_string_new("");
     fhs->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
     return fhs;
 }

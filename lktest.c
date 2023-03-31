@@ -177,6 +177,25 @@ void lkstring_test() {
     assert(lks->s_len == 7);
     lk_string_free(lks);
 
+    lks = lk_string_new("abc");
+    lk_string_prepend(lks, "def ");
+    assert(lk_string_sz_equal(lks, "def abc"));
+    lk_string_free(lks);
+
+    lks = lk_string_size_new(25);
+    lk_string_prepend(lks, " World");
+    lk_string_prepend(lks, "Hello");
+    lk_string_prepend(lks, "1. ");
+    assert(lk_string_sz_equal(lks, "1. Hello World"));
+    lk_string_free(lks);
+
+    lks = lk_string_size_new(2);
+    lk_string_assign(lks, "Little Kitten Webserver written in C");
+    lk_string_prepend(lks, "A ");
+    lk_string_append(lks, ".");
+    assert(lk_string_sz_equal(lks, "A Little Kitten Webserver written in C."));
+    lk_string_free(lks);
+
     lks = lk_string_new("");
     LKStringList *parts = lk_string_split(lks, "a");
     assert(parts->items_len == 1);

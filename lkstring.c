@@ -12,8 +12,13 @@
 #define LK_STRING_BUF_SIZE 1024
 #define N_GROW_STRING 20
 
+// Zero out entire size
 void zero_s(LKString *lks) {
     memset(lks->s, 0, lks->s_size+1);
+}
+// Zero out the free unused space
+void zero_unused_s(LKString *lks) {
+    memset(lks->s + lks->s_len, '\0', lks->s_size+1 - lks->s_len);
 }
 
 LKString *lk_string_new(char *s) {
@@ -124,9 +129,9 @@ void lk_string_append(LKString *lks, char *s) {
     if (lks->s_len + s_len > lks->s_size) {
         lks->s_size = lks->s_len + s_len;
         lks->s = realloc(lks->s, lks->s_size+1);
+        zero_unused_s(lks);
     }
 
-    memset(lks->s + lks->s_len, '\0', s_len+1);
     strncpy(lks->s + lks->s_len, s, s_len);
     lks->s_len = lks->s_len + s_len;
 }
@@ -135,13 +140,27 @@ void lk_string_append_char(LKString *lks, char c) {
     if (lks->s_len + 1 > lks->s_size) {
         lks->s_size = lks->s_len + N_GROW_STRING;
         lks->s = realloc(lks->s, lks->s_size+1);
-        memset(lks->s + lks->s_len, '\0', lks->s_size+1 - lks->s_len);
+        zero_unused_s(lks);
     }
 
     lks->s[lks->s_len] = c;
     lks->s[lks->s_len+1] = '\0';
     lks->s_len++;
 }
+
+void lk_string_prepend(LKString *lks, char *s) {
+    size_t s_len = strlen(s);
+    if (lks->s_len + s_len > lks->s_size) {
+        lks->s_size = lks->s_len + s_len;
+        lks->s = realloc(lks->s, lks->s_size+1);
+        zero_unused_s(lks);
+    }
+
+    memmove(lks->s + s_len, lks->s, lks->s_len); // shift string to right
+    strncpy(lks->s, s, s_len);                   // prepend s to string
+    lks->s_len = lks->s_len + s_len;
+}
+
 
 int lk_string_sz_equal(LKString *lks1, char *s2) {
     if (!strcmp(lks1->s, s2)) {
@@ -266,7 +285,6 @@ LKStringList *lk_string_split(LKString *lks, char *delim) {
         lk_string_append_char(segment, lks->s[i]);
     }
     lk_stringlist_append_lkstring(sl, segment);
-    printf("segment: '%s'\n", segment->s);
 
     return sl;
 }
