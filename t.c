@@ -11,17 +11,23 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 #include "lklib.h"
 #include "lknet.h"
+
+struct procfile {
+    FILE *f;
+    int fd;
+};
+
+void *runcgi(void *parg);
 
 int file_exists(char *filename) {
     struct stat statbuf;
     int z = stat(filename, &statbuf);
     return !z;
 }
-
-#define BUF_SIZE 1024
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -45,52 +51,55 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(fd, &readfds);
+    struct procfile pfile;
+    pfile.f = f1;
+    pfile.fd = fd;
 
-    fcntl(fd, F_SETFL, O_NONBLOCK);
-    char buf[BUF_SIZE];
-    unsigned int j = 0;
-    while (1) {
-        fd_set cur_readfds = readfds;
-        int z = select(fd+1, &cur_readfds, NULL, NULL, NULL);
-        if (z == -1) {
-            perror("select()");
-            exit(1);
-        }
-        if (z == 0) {
-            // timeout
-            continue;
-        }
-        if (FD_ISSET(fd, &cur_readfds)) {
-            z = read(fd, buf, sizeof(buf)-1);
-            if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                // no data for now, retry again
-                printf("%c\033[1D", j ? '/' : '\\');
-                j++;
-                j = j % 2;
-                continue;
-            }
-            if (z == -1 && errno == EINTR) {
-                printf("\n*** EINTR ***\n");
-                continue;
-            }
-            if (z == -1) {
-                break;
-            }
-            if (z == 0) {
-                // eof
-                FD_CLR(fd, &readfds);
-                break;
-            }
-            buf[z] = '\0';
-            printf("%s", buf);
-        }
+    printf("pthread_create runcgi()...\n");
+    pthread_t t1;
+    int z = pthread_create(&t1, NULL, runcgi, &pfile);
+    if (z != 0) {
+        errno = z;
+        perror("pthread_create()");
+        exit(1);
     }
+/*
+    z = pthread_detach(t1);
+    if (z != 0) {
+        errno = z;
+        perror("pthread_detach()");
+        exit(1);
+    }
+*/
+/*
+    z = pthread_join(t1, NULL);
+    if (z != 0) {
+        errno = z;
+        perror("pthread_join()");
+        exit(1);
+    }
+*/
 
-    pclose(f1);
+    sleep(1);
+    printf("Exit main.\n");
     return 0;
 }
 
+void *runcgi(void *parg) {
+    printf("*** Start runcgi() function...\n");
+    struct procfile *pfile = (struct procfile *) parg;
+    FILE *f = pfile->f;
+    int fd = pfile->fd;
+
+    LKBuffer *buf = lk_buffer_new(0);
+    lk_readfd(fd, buf);
+    for (int i=0; i < buf->bytes_len; i++) {
+        putchar(buf->bytes[i]);
+    }
+    lk_buffer_free(buf);
+
+    pclose(f);
+    printf("*** End runcgi() function\n");
+    return NULL;
+}
 

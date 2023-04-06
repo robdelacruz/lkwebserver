@@ -1,4 +1,4 @@
-CFLAGS=-g -Wall
+CFLAGS=-g -Wall -pthread
 LIBS=
 LKLIB_SRC=lklib.c lkstring.c lkstringmap.c lkbuffer.c lknet.c lkstringlist.c lkhttpserver.c
 
@@ -12,6 +12,9 @@ tclient: tclient.c $(LKLIB_SRC)
 
 lktest: lktest.c $(LKLIB_SRC)
 	gcc -o lktest lktest.c $(LKLIB_SRC) $(CFLAGS) $(LIBS)
+
+t: t.c $(LKLIB_SRC)
+	gcc -o t t.c $(LKLIB_SRC) $(CFLAGS) $(LIBS)
 
 clean:
 	rm -rf t lkws tclient lktest
