@@ -42,6 +42,10 @@ int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx);
 int ends_with_newline(char *s);
 void process_request(LKHttpServer *server, LKHttpClientContext *ctx);
 
+void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
+int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
+char *fileext(char *filepath);
+
 void send_response_to_client(LKHttpServer *server, int clientfd);
 int send_buf_bytes(int sock, LKBuffer *buf);
 void terminate_client_session(LKHttpServer *server, int clientfd);
@@ -49,11 +53,10 @@ void terminate_client_session(LKHttpServer *server, int clientfd);
 
 /*** LKHttpServer functions ***/
 
-LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc, void *handler_ctx) {
+LKHttpServer *lk_httpserver_new(LKHttpServerSettings *settings) {
     LKHttpServer *server = malloc(sizeof(LKHttpServer));
     server->ctxhead = NULL;
-    server->handler_ctx = handler_ctx;
-    server->http_handler_func = handlerfunc;
+    server->settings = settings;
     return server;
 }
 
@@ -337,17 +340,8 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
     LKHttpRequest *req = ctx->reqparser->req;
     LKHttpResponse *resp = lk_httpresponse_new();
 
-    LKHttpHandlerFunc handler_func = server->http_handler_func;
-    if (handler_func) {
-        (*handler_func)(server->handler_ctx, req, resp);
-        lk_httpresponse_finalize(resp);
-    } else {
-        // If no handler, return default 200 OK response.
-        resp->status = 200;
-        lk_string_assign(resp->statustext, "Default OK");
-        lk_string_assign(resp->version, "HTTP/1.0");
-        lk_httpresponse_finalize(resp);
-    }
+    serve_files(server, ctx, req, resp);
+    lk_httpresponse_finalize(resp);
 
     char time_str[TIME_STRING_SIZE];
     get_localtime_string(time_str, sizeof(time_str));
@@ -366,6 +360,155 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
     FD_SET(ctx->sock, &server->writefds);
     return;
 }
+
+// Generate an http response to an http request.
+void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp) {
+    int z;
+    LKHttpServerSettings *settings = server->settings;
+
+    static char *html_error_start = 
+       "<!DOCTYPE html>\n"
+       "<html>\n"
+       "<head><title>Error response</title></head>\n"
+       "<body><h1>Error response</h1>\n";
+    static char *html_error_end =
+       "</body></html>\n";
+
+    static char *html_sample =
+       "<!DOCTYPE html>\n"
+       "<html>\n"
+       "<head><title>Little Kitten</title></head>\n"
+       "<body><h1>Little Kitten webserver</h1>\n"
+       "<p>Hello Little Kitten!</p>\n"
+       "</body></html>\n";
+
+#if 0
+    static char *html_start =
+       "<!DOCTYPE html>\n"
+       "<html>\n"
+       "<head><title>Little Kitten Sample Response</title></head>\n"
+       "<body>\n";
+    static char *html_end =
+       "</body></html>\n";
+#endif
+
+    char *method = req->method->s;
+    char *uri = req->uri->s;
+
+    if (!strcmp(method, "GET")) {
+        // /littlekitten sample page
+        if (!strcmp(uri, "/littlekitten")) {
+            lk_httpresponse_add_header(resp, "Content-Type", "text/html");
+            lk_buffer_append(resp->body, html_sample, strlen(html_sample));
+            return;
+        }
+
+        LKString *content_type = lk_string_new("");
+        lk_string_assign_sprintf(content_type, "text/%s;", fileext(uri));
+        lk_httpresponse_add_header(resp, "Content-Type", content_type->s);
+        lk_string_free(content_type);
+
+        // Use alias if there's a match for uri.
+        // Ex. uri: "/latest" => "/latest.html"
+        LKString *alias_uri = lk_stringmap_get(settings->aliases, uri);
+        if (alias_uri != NULL) {
+            uri = alias_uri->s;
+        }
+
+        // if no page given, try opening index.html, ...
+        //$$ Better way to do this?
+        if (!strcmp(uri, "/")) {
+            while (1) {
+                z = read_uri_file(settings->home_dir->s, "/index.html", resp->body);
+                if (z == 0) break;
+                z = read_uri_file(settings->home_dir->s, "/index.htm", resp->body);
+                if (z == 0) break;
+                z = read_uri_file(settings->home_dir->s, "/default.html", resp->body);
+                if (z == 0) break;
+                z = read_uri_file(settings->home_dir->s, "/default.htm", resp->body);
+                break;
+            }
+        } else {
+            z = read_uri_file(settings->home_dir->s, uri, resp->body);
+        }
+        if (z == -1) {
+            // uri file not found
+            resp->status = 404;
+            lk_string_assign_sprintf(resp->statustext, "File not found '%s'", uri);
+            lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
+            lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", uri);
+        }
+
+        return;
+    }
+#if 0
+    if (!strcmp(method, "POST")) {
+        lk_httpresponse_add_header(resp, "Content-Type", "text/html");
+        lk_buffer_append(resp->body, html_start, strlen(html_start));
+        lk_buffer_append_sz(resp->body, "<pre>\n");
+        lk_buffer_append(resp->body, req->body->bytes, req->body->bytes_len);
+        lk_buffer_append_sz(resp->body, "\n</pre>\n");
+        lk_buffer_append(resp->body, html_end, strlen(html_end));
+        return;
+    }
+#endif
+
+    resp->status = 501;
+    lk_string_assign_sprintf(resp->statustext, "Unsupported method ('%s')", method);
+
+    lk_buffer_append(resp->body, html_error_start, strlen(html_error_start));
+    lk_buffer_append_sprintf(resp->body, "<p>Error code %d.</p>\n", resp->status);
+    lk_buffer_append_sprintf(resp->body, "<p>Message: Unsupported method ('%s').</p>\n", resp->statustext->s);
+    lk_buffer_append(resp->body, html_error_end, strlen(html_error_end));
+}
+
+// Read <home_dir>/<uri> file into buffer.
+// Returns 0 for success, -1 for error.
+int read_uri_file(char *home_dir, char *uri, LKBuffer *buf) {
+    // uri_path = home_dir + uri
+    // Ex. "/path/to" + "/index.html"
+    LKString *uri_path = lk_string_new(home_dir);
+    lk_string_append(uri_path, uri);
+    int z = lk_readfile(uri_path->s, buf);
+    lk_string_free(uri_path);
+    return z;
+}
+
+int is_valid_http_method(char *method) {
+    if (method == NULL) {
+        return 0;
+    }
+
+    if (!strcasecmp(method, "GET")      ||
+        !strcasecmp(method, "POST")     || 
+        !strcasecmp(method, "PUT")      || 
+        !strcasecmp(method, "DELETE")   ||
+        !strcasecmp(method, "HEAD"))  {
+        return 1;
+    }
+
+    return 0;
+}
+
+// Return ptr to start of file extension within filepath.
+// Ex. "path/to/index.html" returns "index.html"
+char *fileext(char *filepath) {
+    int filepath_len = strlen(filepath);
+    // filepath of "" returns ext of "".
+    if (filepath_len == 0) {
+        return filepath;
+    }
+
+    char *p = filepath + strlen(filepath) - 1;
+    while (p >= filepath) {
+        if (*p == '.') {
+            return p+1;
+        }
+        p--;
+    }
+    return filepath;
+}
+
 
 void send_response_to_client(LKHttpServer *server, int clientfd) {
     LKHttpClientContext *ctx = server->ctxhead;

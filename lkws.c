@@ -20,23 +20,10 @@
 
 #define LISTEN_PORT "5000"
 
-typedef struct {
-    LKString    *home_dir;
-    LKString    *cgi_dir;
-    LKStringMap *aliases;
-} FileHandlerSettings;
-
-void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
-int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
-int is_valid_http_method(char *method);
-char *fileext(char *filepath);
 void handle_sigint(int sig);
 void handle_sigchld(int sig);
-void parse_args(int argc, char *argv[], FileHandlerSettings *settings);
+void parse_args(int argc, char *argv[], LKHttpServerSettings *settings);
 void parse_args_alias(char *arg, LKStringMap *aliases);
-
-FileHandlerSettings *create_filehandler_settings();
-void free_filehandler_settings(FileHandlerSettings *settings);
 
 int main(int argc, char *argv[]) {
     int z;
@@ -73,7 +60,7 @@ int main(int argc, char *argv[]) {
     }
 
     // $ lkws /testsite -a latest=/latest.html -a about=/about.html
-    FileHandlerSettings *settings = create_filehandler_settings();
+    LKHttpServerSettings *settings = lk_httpserver_settings_new();
     parse_args(argc, argv, settings);
 
     // If home_dir not specified, use current working directory.
@@ -93,7 +80,7 @@ int main(int argc, char *argv[]) {
     lk_string_prepend(settings->cgi_dir, settings->home_dir->s);
     printf("home_dir: '%s', cgi_dir: '%s'\n", settings->home_dir->s, settings->cgi_dir->s);
 
-    LKHttpServer *httpserver = lk_httpserver_new(serve_file_handler, (void*) settings);
+    LKHttpServer *httpserver = lk_httpserver_new(settings);
 
     LKString *server_ipaddr_str = lk_get_ipaddr_string(servaddr->ai_addr);
     printf("Serving HTTP on %s port %s...\n", server_ipaddr_str->s, LISTEN_PORT);
@@ -106,7 +93,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Code doesn't reach here.
-    free_filehandler_settings(settings);
+    lk_httpserver_settings_free(settings);
     lk_httpserver_free(httpserver);
     close(s0);
     return 0;
@@ -130,7 +117,7 @@ typedef enum {PA_NONE, PA_ALIAS} ParseArgsState;
 // $ lkws testsite/ -a /latest=/latest.html -a about=/about.html
 // $ lkws testsite/ -a latest=foo/latest.html -a about=about.html
 // $ lkws testsite/ --cgidir=cgifolder
-void parse_args(int argc, char *argv[], FileHandlerSettings *settings) {
+void parse_args(int argc, char *argv[], LKHttpServerSettings *settings) {
     ParseArgsState state = PA_NONE;
 
     for (int i=1; i < argc; i++) {
@@ -190,168 +177,20 @@ void parse_args_alias(char *arg, LKStringMap *aliases) {
     lk_string_free(lksarg);
 }
 
-FileHandlerSettings *create_filehandler_settings() {
-    FileHandlerSettings *fhs = malloc(sizeof(FileHandlerSettings));
-    memset(fhs, 0, sizeof(FileHandlerSettings));
-    fhs->home_dir = lk_string_new("");
-    fhs->cgi_dir = lk_string_new("");
-    fhs->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
-    return fhs;
+LKHttpServerSettings *lk_httpserver_settings_new() {
+    LKHttpServerSettings *settings = malloc(sizeof(LKHttpServerSettings));
+    memset(settings, 0, sizeof(LKHttpServerSettings));
+    settings->home_dir = lk_string_new("");
+    settings->cgi_dir = lk_string_new("");
+    settings->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
+    return settings;
 }
 
-void free_filehandler_settings(FileHandlerSettings *settings) {
+void lk_httpserver_settings_free(LKHttpServerSettings *settings) {
     lk_string_free(settings->home_dir);
     lk_string_free(settings->cgi_dir);
     lk_stringmap_free(settings->aliases);
     free(settings);
 }
 
-
-// Generate an http response to an http request.
-void serve_file_handler(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp) {
-    int z;
-    FileHandlerSettings *settings = handler_ctx;
-
-    static char *html_error_start = 
-       "<!DOCTYPE html>\n"
-       "<html>\n"
-       "<head><title>Error response</title></head>\n"
-       "<body><h1>Error response</h1>\n";
-    static char *html_error_end =
-       "</body></html>\n";
-
-    static char *html_sample =
-       "<!DOCTYPE html>\n"
-       "<html>\n"
-       "<head><title>Little Kitten</title></head>\n"
-       "<body><h1>Little Kitten webserver</h1>\n"
-       "<p>Hello Little Kitten!</p>\n"
-       "</body></html>\n";
-
-#if 0
-    static char *html_start =
-       "<!DOCTYPE html>\n"
-       "<html>\n"
-       "<head><title>Little Kitten Sample Response</title></head>\n"
-       "<body>\n";
-    static char *html_end =
-       "</body></html>\n";
-#endif
-
-    char *method = req->method->s;
-    char *uri = req->uri->s;
-
-    if (!strcmp(method, "GET")) {
-        // /littlekitten sample page
-        if (!strcmp(uri, "/littlekitten")) {
-            lk_httpresponse_add_header(resp, "Content-Type", "text/html");
-            lk_buffer_append(resp->body, html_sample, strlen(html_sample));
-            return;
-        }
-
-        LKString *content_type = lk_string_new("");
-        lk_string_assign_sprintf(content_type, "text/%s;", fileext(uri));
-        lk_httpresponse_add_header(resp, "Content-Type", content_type->s);
-        lk_string_free(content_type);
-
-        // Use alias if there's a match for uri.
-        // Ex. uri: "/latest" => "/latest.html"
-        LKString *alias_uri = lk_stringmap_get(settings->aliases, uri);
-        if (alias_uri != NULL) {
-            uri = alias_uri->s;
-        }
-
-        // if no page given, try opening index.html, ...
-        //$$ Better way to do this?
-        if (!strcmp(uri, "/")) {
-            while (1) {
-                z = read_uri_file(settings->home_dir->s, "/index.html", resp->body);
-                if (z == 0) break;
-                z = read_uri_file(settings->home_dir->s, "/index.htm", resp->body);
-                if (z == 0) break;
-                z = read_uri_file(settings->home_dir->s, "/default.html", resp->body);
-                if (z == 0) break;
-                z = read_uri_file(settings->home_dir->s, "/default.htm", resp->body);
-                break;
-            }
-        } else {
-            z = read_uri_file(settings->home_dir->s, uri, resp->body);
-        }
-        if (z == -1) {
-            // uri file not found
-            resp->status = 404;
-            lk_string_assign_sprintf(resp->statustext, "File not found '%s'", uri);
-            lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
-            lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", uri);
-        }
-
-        return;
-    }
-#if 0
-    if (!strcmp(method, "POST")) {
-        lk_httpresponse_add_header(resp, "Content-Type", "text/html");
-        lk_buffer_append(resp->body, html_start, strlen(html_start));
-        lk_buffer_append_sz(resp->body, "<pre>\n");
-        lk_buffer_append(resp->body, req->body->bytes, req->body->bytes_len);
-        lk_buffer_append_sz(resp->body, "\n</pre>\n");
-        lk_buffer_append(resp->body, html_end, strlen(html_end));
-        return;
-    }
-#endif
-
-    resp->status = 501;
-    lk_string_assign_sprintf(resp->statustext, "Unsupported method ('%s')", method);
-
-    lk_buffer_append(resp->body, html_error_start, strlen(html_error_start));
-    lk_buffer_append_sprintf(resp->body, "<p>Error code %d.</p>\n", resp->status);
-    lk_buffer_append_sprintf(resp->body, "<p>Message: Unsupported method ('%s').</p>\n", resp->statustext->s);
-    lk_buffer_append(resp->body, html_error_end, strlen(html_error_end));
-}
-
-// Read <home_dir>/<uri> file into buffer.
-// Returns 0 for success, -1 for error.
-int read_uri_file(char *home_dir, char *uri, LKBuffer *buf) {
-    // uri_path = home_dir + uri
-    // Ex. "/path/to" + "/index.html"
-    LKString *uri_path = lk_string_new(home_dir);
-    lk_string_append(uri_path, uri);
-    int z = lk_readfile(uri_path->s, buf);
-    lk_string_free(uri_path);
-    return z;
-}
-
-int is_valid_http_method(char *method) {
-    if (method == NULL) {
-        return 0;
-    }
-
-    if (!strcasecmp(method, "GET")      ||
-        !strcasecmp(method, "POST")     || 
-        !strcasecmp(method, "PUT")      || 
-        !strcasecmp(method, "DELETE")   ||
-        !strcasecmp(method, "HEAD"))  {
-        return 1;
-    }
-
-    return 0;
-}
-
-// Return ptr to start of file extension within filepath.
-// Ex. "path/to/index.html" returns "index.html"
-char *fileext(char *filepath) {
-    int filepath_len = strlen(filepath);
-    // filepath of "" returns ext of "".
-    if (filepath_len == 0) {
-        return filepath;
-    }
-
-    char *p = filepath + strlen(filepath) - 1;
-    while (p >= filepath) {
-        if (*p == '.') {
-            return p+1;
-        }
-        p--;
-    }
-    return filepath;
-}
 

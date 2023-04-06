@@ -71,18 +71,26 @@ void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, si
 
 
 /*** LKHttpServer ***/
+typedef struct {
+    LKString    *home_dir;
+    LKString    *cgi_dir;
+    LKStringMap *aliases;
+} LKHttpServerSettings;
+
 typedef struct httpclientcontext LKHttpClientContext;
-typedef void (*LKHttpHandlerFunc)(void *handler_ctx, LKHttpRequest *req, LKHttpResponse *resp);
 
 typedef struct {
     LKHttpClientContext *ctxhead;
     fd_set readfds;
     fd_set writefds;
-    LKHttpHandlerFunc http_handler_func;
+    LKHttpServerSettings *settings;
     void *handler_ctx;
 } LKHttpServer;
 
-LKHttpServer *lk_httpserver_new(LKHttpHandlerFunc handlerfunc, void *handler_ctx);
+LKHttpServerSettings *lk_httpserver_settings_new();
+void lk_httpserver_settings_free(LKHttpServerSettings *settings);
+
+LKHttpServer *lk_httpserver_new(LKHttpServerSettings *settings);
 void lk_httpserver_free(LKHttpServer *server);
 int lk_httpserver_serve(LKHttpServer *server, int listen_sock);
 
