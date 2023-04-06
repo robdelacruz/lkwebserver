@@ -143,7 +143,7 @@ LKHttpClientContext *lk_clientcontext_new(int sock, struct sockaddr *sa) {
     ctx->sr = lk_socketreader_new(sock, 0);
     ctx->reqparser = lk_httprequestparser_new();
     ctx->partial_line = lk_string_new("");
-    ctx->resp = NULL;
+    ctx->resp = lk_httpresponse_new();
     ctx->next = NULL;
     return ctx;
 }
@@ -338,8 +338,7 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
     assert(ctx->reqparser->req);
 
     LKHttpRequest *req = ctx->reqparser->req;
-    LKHttpResponse *resp = lk_httpresponse_new();
-
+    LKHttpResponse *resp = ctx->resp;
     serve_files(server, ctx, req, resp);
     lk_httpresponse_finalize(resp);
 
@@ -356,7 +355,6 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
             resp->status, resp->statustext->s);
     }
 
-    ctx->resp = resp;
     FD_SET(ctx->sock, &server->writefds);
     return;
 }
