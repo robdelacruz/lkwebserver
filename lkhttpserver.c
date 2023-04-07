@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -29,11 +30,21 @@ struct httpclientcontext {
     struct httpclientcontext *next;   // link to next client
 };
 
+struct httpserversettings {
+    LKString *homedir;
+    LKString *cgidir;
+    LKStringMap *aliases;
+};
+
 // local functions
-LKHttpClientContext *lk_clientcontext_new(int sock, struct sockaddr *sa);
-void lk_clientcontext_free(LKHttpClientContext *ctx);
+LKHttpClientContext *create_clientcontext(int sock, struct sockaddr *sa);
+void free_clientcontext(LKHttpClientContext *ctx);
 void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx);
 void remove_clientcontext(LKHttpClientContext **pphead, int sock);
+
+LKHttpServerSettings *create_serversettings();
+void free_serversettings(LKHttpServerSettings *settings);
+void finalize_settings(LKHttpServerSettings *settings);
 
 void read_request_from_client(LKHttpServer *server, int clientfd);
 int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx);
@@ -51,19 +62,72 @@ void terminate_client_session(LKHttpServer *server, int clientfd);
 
 /*** LKHttpServer functions ***/
 
-LKHttpServer *lk_httpserver_new(LKHttpServerSettings *settings) {
+LKHttpServer *lk_httpserver_new() {
     LKHttpServer *server = malloc(sizeof(LKHttpServer));
     server->ctxhead = NULL;
-    server->settings = settings;
+    server->settings = create_serversettings();
     return server;
 }
 
 void lk_httpserver_free(LKHttpServer *server) {
+    //$$ free ctxhead clientctx linked list?
+
+    free_serversettings(server->settings);
     memset(server, 0, sizeof(LKHttpServer));
     free(server);
 }
 
+// Fill in default values for unspecified settings.
+void finalize_settings(LKHttpServerSettings *settings) {
+    // If home_dir not specified, use current working directory.
+    if (settings->homedir->s_len == 0) {
+        char *current_dir = get_current_dir_name();
+        current_dir = NULL;
+        if (current_dir != NULL) {
+            lk_string_assign(settings->homedir, current_dir);
+            free(current_dir);
+        } else {
+            lk_string_assign(settings->homedir, ".");
+        }
+    }
+    if (settings->cgidir->s_len == 0) {
+        lk_string_append(settings->cgidir, "/cgi-bin");
+    }
+    lk_string_prepend(settings->cgidir, settings->homedir->s);
+}
+
+void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
+    LKHttpServerSettings *settings = server->settings;
+
+    va_list args;
+    va_start(args, opt);
+
+    switch(opt) {
+    case LKHTTPSERVEROPT_HOMEDIR:
+        char *homedir = va_arg(args, char*);
+        lk_string_assign(settings->homedir, homedir);
+        lk_string_chop_end(settings->homedir, "/");
+        break;
+    case LKHTTPSERVEROPT_CGIDIR:
+        char *cgidir = va_arg(args, char*);
+        lk_string_assign(settings->cgidir, cgidir);
+        lk_string_chop_end(settings->cgidir, "/");
+        break;
+    case LKHTTPSERVEROPT_ALIAS:
+        char *alias_k = va_arg(args, char*);
+        char *alias_v = va_arg(args, char*);
+        lk_stringmap_set(settings->aliases, alias_k, lk_string_new(alias_v));
+        break;
+    default:
+        break;
+    }
+
+    va_end(args);
+}
+
 int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
+    printf("home_dir: '%s', cgi_dir: '%s'\n", server->settings->homedir->s, server->settings->cgidir->s);
+
     int z = listen(listen_sock, 5);
     if (z != 0) {
         lk_print_err("listen()");
@@ -110,7 +174,7 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                     }
 
                     //printf("read fd: %d\n", newclientsock);
-                    LKHttpClientContext *ctx = lk_clientcontext_new(newclientsock, (struct sockaddr*) sa);
+                    LKHttpClientContext *ctx = create_clientcontext(newclientsock, (struct sockaddr*) sa);
                     add_clientcontext(&server->ctxhead, ctx);
                     continue;
                 } else {
@@ -128,92 +192,6 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
     } // while (1)
 
     return 0;
-}
-
-
-/*** LKHttpClientContext functions ***/
-
-LKHttpClientContext *lk_clientcontext_new(int sock, struct sockaddr *sa) {
-    LKHttpClientContext *ctx = malloc(sizeof(LKHttpClientContext));
-    ctx->sock = sock;
-    ctx->client_sa = sa;
-    ctx->client_ipaddr = lk_get_ipaddr_string(sa);
-    ctx->sr = lk_socketreader_new(sock, 0);
-    ctx->reqparser = lk_httprequestparser_new();
-    ctx->resp = lk_httpresponse_new();
-    ctx->next = NULL;
-    return ctx;
-}
-
-void lk_clientcontext_free(LKHttpClientContext *ctx) {
-    if (ctx->client_sa) {
-        free(ctx->client_sa);
-    }
-    lk_string_free(ctx->client_ipaddr);
-    lk_socketreader_free(ctx->sr);
-    lk_httprequestparser_free(ctx->reqparser);
-    if (ctx->resp) {
-        lk_httpresponse_free(ctx->resp);
-    }
-
-    ctx->client_sa = NULL;
-    ctx->client_ipaddr = NULL;
-    ctx->sr = NULL;
-    ctx->reqparser = NULL;
-    ctx->resp = NULL;
-    ctx->next = NULL;
-    free(ctx);
-}
-
-// Add ctx to end of clientctx linked list. Skip if ctx sock already in list.
-void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx) {
-    assert(pphead != NULL);
-
-    if (*pphead == NULL) {
-        // first client
-        *pphead = ctx;
-    } else {
-        // add client to end of clients list
-        LKHttpClientContext *p = *pphead;
-        while (p->next != NULL) {
-            // ctx sock already exists
-            if (p->sock == ctx->sock) {
-                return;
-            }
-            p = p->next;
-        }
-        p->next = ctx;
-    }
-}
-
-// Remove ctx sock from clientctx linked list.
-void remove_clientcontext(LKHttpClientContext **pphead, int sock) {
-    assert(pphead != NULL);
-
-    if (*pphead == NULL) {
-        return;
-    }
-    // remove head ctx
-    if ((*pphead)->sock == sock) {
-        LKHttpClientContext *tmp = *pphead;
-        *pphead = (*pphead)->next;
-        lk_clientcontext_free(tmp);
-        return;
-    }
-
-    LKHttpClientContext *p = *pphead;
-    LKHttpClientContext *prev = NULL;
-    while (p != NULL) {
-        if (p->sock == sock) {
-            assert(prev != NULL);
-            prev->next = p->next;
-            lk_clientcontext_free(p);
-            return;
-        }
-
-        prev = p;
-        p = p->next;
-    }
 }
 
 void read_request_from_client(LKHttpServer *server, int clientfd) {
@@ -327,8 +305,6 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
 // Generate an http response to an http request.
 void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp) {
     int z;
-    LKHttpServerSettings *settings = server->settings;
-
     static char *html_error_start = 
        "<!DOCTYPE html>\n"
        "<html>\n"
@@ -354,6 +330,9 @@ void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *
     static char *html_end =
        "</body></html>\n";
 #endif
+
+    LKHttpServerSettings *settings = server->settings;
+    finalize_settings(settings);
 
     char *method = req->method->s;
     char *uri = req->uri->s;
@@ -382,17 +361,17 @@ void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *
         //$$ Better way to do this?
         if (!strcmp(uri, "/")) {
             while (1) {
-                z = read_uri_file(settings->home_dir->s, "/index.html", resp->body);
+                z = read_uri_file(settings->homedir->s, "/index.html", resp->body);
                 if (z == 0) break;
-                z = read_uri_file(settings->home_dir->s, "/index.htm", resp->body);
+                z = read_uri_file(settings->homedir->s, "/index.htm", resp->body);
                 if (z == 0) break;
-                z = read_uri_file(settings->home_dir->s, "/default.html", resp->body);
+                z = read_uri_file(settings->homedir->s, "/default.html", resp->body);
                 if (z == 0) break;
-                z = read_uri_file(settings->home_dir->s, "/default.htm", resp->body);
+                z = read_uri_file(settings->homedir->s, "/default.htm", resp->body);
                 break;
             }
         } else {
-            z = read_uri_file(settings->home_dir->s, uri, resp->body);
+            z = read_uri_file(settings->homedir->s, uri, resp->body);
         }
         if (z == -1) {
             // uri file not found
@@ -544,3 +523,108 @@ void terminate_client_session(LKHttpServer *server, int clientfd) {
     remove_clientcontext(&server->ctxhead, clientfd);
 }
 
+
+/*** LKHttpClientContext functions ***/
+
+LKHttpClientContext *create_clientcontext(int sock, struct sockaddr *sa) {
+    LKHttpClientContext *ctx = malloc(sizeof(LKHttpClientContext));
+    ctx->sock = sock;
+    ctx->client_sa = sa;
+    ctx->client_ipaddr = lk_get_ipaddr_string(sa);
+    ctx->sr = lk_socketreader_new(sock, 0);
+    ctx->reqparser = lk_httprequestparser_new();
+    ctx->resp = lk_httpresponse_new();
+    ctx->next = NULL;
+    return ctx;
+}
+
+void free_clientcontext(LKHttpClientContext *ctx) {
+    if (ctx->client_sa) {
+        free(ctx->client_sa);
+    }
+    lk_string_free(ctx->client_ipaddr);
+    lk_socketreader_free(ctx->sr);
+    lk_httprequestparser_free(ctx->reqparser);
+    if (ctx->resp) {
+        lk_httpresponse_free(ctx->resp);
+    }
+
+    ctx->client_sa = NULL;
+    ctx->client_ipaddr = NULL;
+    ctx->sr = NULL;
+    ctx->reqparser = NULL;
+    ctx->resp = NULL;
+    ctx->next = NULL;
+    free(ctx);
+}
+
+// Add ctx to end of clientctx linked list. Skip if ctx sock already in list.
+void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx) {
+    assert(pphead != NULL);
+
+    if (*pphead == NULL) {
+        // first client
+        *pphead = ctx;
+    } else {
+        // add client to end of clients list
+        LKHttpClientContext *p = *pphead;
+        while (p->next != NULL) {
+            // ctx sock already exists
+            if (p->sock == ctx->sock) {
+                return;
+            }
+            p = p->next;
+        }
+        p->next = ctx;
+    }
+}
+
+// Remove ctx sock from clientctx linked list.
+void remove_clientcontext(LKHttpClientContext **pphead, int sock) {
+    assert(pphead != NULL);
+
+    if (*pphead == NULL) {
+        return;
+    }
+    // remove head ctx
+    if ((*pphead)->sock == sock) {
+        LKHttpClientContext *tmp = *pphead;
+        *pphead = (*pphead)->next;
+        free_clientcontext(tmp);
+        return;
+    }
+
+    LKHttpClientContext *p = *pphead;
+    LKHttpClientContext *prev = NULL;
+    while (p != NULL) {
+        if (p->sock == sock) {
+            assert(prev != NULL);
+            prev->next = p->next;
+            free_clientcontext(p);
+            return;
+        }
+
+        prev = p;
+        p = p->next;
+    }
+}
+
+/*** LKHttpServerSettings functions ***/
+LKHttpServerSettings *create_serversettings() {
+    LKHttpServerSettings *settings = malloc(sizeof(LKHttpServerSettings));
+    settings->homedir = lk_string_new("");
+    settings->cgidir = lk_string_new("");
+    settings->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
+    return settings;
+}
+
+void free_serversettings(LKHttpServerSettings *settings) {
+    lk_string_free(settings->homedir);
+    lk_string_free(settings->cgidir);
+    lk_stringmap_free(settings->aliases);
+
+    settings->homedir = NULL;
+    settings->cgidir = NULL;
+    settings->aliases = NULL;
+    free(settings);
+}

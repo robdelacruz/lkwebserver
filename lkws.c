@@ -22,8 +22,8 @@
 
 void handle_sigint(int sig);
 void handle_sigchld(int sig);
-void parse_args(int argc, char *argv[], LKHttpServerSettings *settings);
-void parse_args_alias(char *arg, LKStringMap *aliases);
+void parse_args(int argc, char *argv[], LKHttpServer *server);
+void parse_args_alias(char *arg, LKHttpServer *server);
 
 int main(int argc, char *argv[]) {
     int z;
@@ -59,28 +59,10 @@ int main(int argc, char *argv[]) {
         lk_exit_err("bind()");
     }
 
-    // $ lkws /testsite -a latest=/latest.html -a about=/about.html
-    LKHttpServerSettings *settings = lk_httpserver_settings_new();
-    parse_args(argc, argv, settings);
+    LKHttpServer *httpserver = lk_httpserver_new();
 
-    // If home_dir not specified, use current working directory.
-    if (settings->home_dir->s_len == 0) {
-        char *current_dir = get_current_dir_name();
-        current_dir = NULL;
-        if (current_dir != NULL) {
-            lk_string_assign(settings->home_dir, current_dir);
-            free(current_dir);
-        } else {
-            lk_string_assign(settings->home_dir, ".");
-        }
-    }
-    if (settings->cgi_dir->s_len == 0) {
-        lk_string_append(settings->cgi_dir, "/cgi-bin");
-    }
-    lk_string_prepend(settings->cgi_dir, settings->home_dir->s);
-    printf("home_dir: '%s', cgi_dir: '%s'\n", settings->home_dir->s, settings->cgi_dir->s);
-
-    LKHttpServer *httpserver = lk_httpserver_new(settings);
+    // $ lkws /testsite --cgidir=cgi-bin -a latest=/latest.html -a about=/about.html
+    parse_args(argc, argv, httpserver);
 
     LKString *server_ipaddr_str = lk_get_ipaddr_string(servaddr->ai_addr);
     printf("Serving HTTP on %s port %s...\n", server_ipaddr_str->s, LISTEN_PORT);
@@ -93,7 +75,6 @@ int main(int argc, char *argv[]) {
     }
 
     // Code doesn't reach here.
-    lk_httpserver_settings_free(settings);
     lk_httpserver_free(httpserver);
     close(s0);
     return 0;
@@ -117,8 +98,9 @@ typedef enum {PA_NONE, PA_ALIAS} ParseArgsState;
 // $ lkws testsite/ -a /latest=/latest.html -a about=/about.html
 // $ lkws testsite/ -a latest=foo/latest.html -a about=about.html
 // $ lkws testsite/ --cgidir=cgifolder
-void parse_args(int argc, char *argv[], LKHttpServerSettings *settings) {
+void parse_args(int argc, char *argv[], LKHttpServer *server) {
     ParseArgsState state = PA_NONE;
+    int is_homedir_set = 0;
 
     for (int i=1; i < argc; i++) {
         char *arg = argv[i];
@@ -135,31 +117,29 @@ void parse_args(int argc, char *argv[], LKHttpServerSettings *settings) {
                 if (!lk_string_starts_with(v, "/")) {
                     lk_string_prepend(v, "/");
                 }
-                lk_string_assign(settings->cgi_dir, v->s);
+                lk_httpserver_setopt(server, LKHTTPSERVEROPT_CGIDIR, v->s);
             }
             lk_stringlist_free(parts);
             lk_string_free(lksarg);
             continue;
         }
         if (state == PA_ALIAS) {
-            parse_args_alias(arg, settings->aliases);
+            parse_args_alias(arg, server);
             state = PA_NONE;
             continue;
         }
         assert(state == PA_NONE);
-        if (settings->home_dir->s_len == 0) {
-            lk_string_assign(settings->home_dir, arg);
+        if (!is_homedir_set) {
+            lk_httpserver_setopt(server, LKHTTPSERVEROPT_HOMEDIR, arg);
+            is_homedir_set = 1;
         }
         continue;
     }
-
-    lk_string_chop_end(settings->home_dir, "/");
-    lk_string_chop_end(settings->cgi_dir, "/");
 }
 
 // Parse and add new alias definition into aliases
 // alias definition "/latest=/latest.html" ==> "/latest" : "/latest.html"
-void parse_args_alias(char *arg, LKStringMap *aliases) {
+void parse_args_alias(char *arg, LKHttpServer *server) {
     LKString *lksarg = lk_string_new(arg);
     LKStringList *parts = lk_string_split(lksarg, "=");
     if (parts->items_len == 2) {
@@ -172,27 +152,10 @@ void parse_args_alias(char *arg, LKStringMap *aliases) {
         if (!lk_string_starts_with(v, "/")) {
             lk_string_prepend(v, "/");
         }
-        lk_stringmap_set(aliases, k->s, lk_string_new(v->s));
+        lk_httpserver_setopt(server, LKHTTPSERVEROPT_ALIAS, k->s, v->s);
     }
 
     lk_stringlist_free(parts);
     lk_string_free(lksarg);
 }
-
-LKHttpServerSettings *lk_httpserver_settings_new() {
-    LKHttpServerSettings *settings = malloc(sizeof(LKHttpServerSettings));
-    memset(settings, 0, sizeof(LKHttpServerSettings));
-    settings->home_dir = lk_string_new("");
-    settings->cgi_dir = lk_string_new("");
-    settings->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
-    return settings;
-}
-
-void lk_httpserver_settings_free(LKHttpServerSettings *settings) {
-    lk_string_free(settings->home_dir);
-    lk_string_free(settings->cgi_dir);
-    lk_stringmap_free(settings->aliases);
-    free(settings);
-}
-
 
