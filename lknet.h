@@ -1,6 +1,12 @@
 #ifndef NETFUNCS_H
 #define NETFUNCS_H
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <fcntl.h>
 #include "lklib.h"
 
 /*** LKHttpRequest - HTTP Request struct ***/
@@ -56,6 +62,7 @@ void lk_socketreader_debugprint(LKSocketReader *sr);
 
 /*** LKHttpRequestParser ***/
 typedef struct {
+    LKString *partial_line;
     unsigned int nlinesread;
     int head_complete;              // flag indicating header lines complete
     int body_complete;              // flag indicating request body complete

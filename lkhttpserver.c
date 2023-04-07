@@ -25,7 +25,6 @@ struct httpclientcontext {
     LKString *client_ipaddr;          // client ip address string
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequestParser *reqparser;   // parser for httprequest
-    LKString *partial_line;
     LKHttpResponse *resp;             // http response to be sent
     struct httpclientcontext *next;   // link to next client
 };
@@ -39,7 +38,6 @@ void remove_clientcontext(LKHttpClientContext **pphead, int sock);
 void read_request_from_client(LKHttpServer *server, int clientfd);
 int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx);
 int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx);
-int ends_with_newline(char *s);
 void process_request(LKHttpServer *server, LKHttpClientContext *ctx);
 
 void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
@@ -142,7 +140,6 @@ LKHttpClientContext *lk_clientcontext_new(int sock, struct sockaddr *sa) {
     ctx->client_ipaddr = lk_get_ipaddr_string(sa);
     ctx->sr = lk_socketreader_new(sock, 0);
     ctx->reqparser = lk_httprequestparser_new();
-    ctx->partial_line = lk_string_new("");
     ctx->resp = lk_httpresponse_new();
     ctx->next = NULL;
     return ctx;
@@ -155,7 +152,6 @@ void lk_clientcontext_free(LKHttpClientContext *ctx) {
     lk_string_free(ctx->client_ipaddr);
     lk_socketreader_free(ctx->sr);
     lk_httprequestparser_free(ctx->reqparser);
-    lk_string_free(ctx->partial_line);
     if (ctx->resp) {
         lk_httpresponse_free(ctx->resp);
     }
@@ -165,7 +161,6 @@ void lk_clientcontext_free(LKHttpClientContext *ctx) {
     ctx->sr = NULL;
     ctx->reqparser = NULL;
     ctx->resp = NULL;
-    ctx->partial_line = NULL;
     ctx->next = NULL;
     free(ctx);
 }
@@ -267,37 +262,7 @@ int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx) {
     }
     assert(buf[nread] == '\0');
 
-    // If there's a previous partial line, combine it with current line.
-    if (ctx->partial_line->s_len > 0) {
-        lk_string_append(ctx->partial_line, buf);
-        if (ends_with_newline(ctx->partial_line->s)) {
-            lk_httprequestparser_parse_line(ctx->reqparser, ctx->partial_line->s);
-            lk_string_assign(ctx->partial_line, "");
-        }
-        return 0;
-    }
-
-    // If current line is only partial line (not newline terminated), remember it for
-    // next read.
-    if (!ends_with_newline(buf)) {
-        lk_string_assign(ctx->partial_line, buf);
-        return 0;
-    }
-
-    // Current line is complete.
     lk_httprequestparser_parse_line(ctx->reqparser, buf);
-    return 0;
-}
-
-// Return whether string ends with \n char.
-int ends_with_newline(char *s) {
-    int slen = strlen(s);
-    if (slen == 0) {
-        return 0;
-    }
-    if (s[slen-1] == '\n') {
-        return 1;
-    }
     return 0;
 }
 
