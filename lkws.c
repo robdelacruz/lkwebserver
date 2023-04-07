@@ -147,7 +147,9 @@ void parse_args(int argc, char *argv[], LKHttpServerSettings *settings) {
             continue;
         }
         assert(state == PA_NONE);
-        lk_string_assign(settings->home_dir, arg);
+        if (settings->home_dir->s_len == 0) {
+            lk_string_assign(settings->home_dir, arg);
+        }
         continue;
     }
 
