@@ -117,6 +117,8 @@ ssize_t lk_readfd(int fd, LKBuffer *buf);
 // Append src to dest, allocating new memory in dest if needed.
 // Return new pointer to dest.
 char *lk_astrncat(char *dest, char *src, size_t src_len);
+// Return whether file exists.
+int lk_file_exists(char *filename);
 
 #endif
 

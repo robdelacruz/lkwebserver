@@ -11,11 +11,13 @@
 #include <time.h>
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 #include "lklib.h"
 #include "lknet.h"
@@ -52,6 +54,7 @@ int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx);
 void process_request(LKHttpServer *server, LKHttpClientContext *ctx);
 
 void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
+void serve_cgi(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
 int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
 char *fileext(char *filepath);
 
@@ -79,7 +82,7 @@ void lk_httpserver_free(LKHttpServer *server) {
 
 // Fill in default values for unspecified settings.
 void finalize_settings(LKHttpServerSettings *settings) {
-    // If home_dir not specified, use current working directory.
+    // If home dir not specified, use current working directory.
     if (settings->homedir->s_len == 0) {
         char *current_dir = get_current_dir_name();
         current_dir = NULL;
@@ -90,13 +93,17 @@ void finalize_settings(LKHttpServerSettings *settings) {
             lk_string_assign(settings->homedir, ".");
         }
     }
+
+    // If cgi dir not specified, default to cgi-bin.
     if (settings->cgidir->s_len == 0) {
-        lk_string_append(settings->cgidir, "/cgi-bin");
+        lk_string_assign(settings->cgidir, "/cgi-bin/");
     }
-    lk_string_prepend(settings->cgidir, settings->homedir->s);
 }
 
 void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
+    char *homedir;
+    char *cgidir;
+    char *alias_k, *alias_v;
     LKHttpServerSettings *settings = server->settings;
 
     va_list args;
@@ -104,18 +111,28 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
 
     switch(opt) {
     case LKHTTPSERVEROPT_HOMEDIR:
-        char *homedir = va_arg(args, char*);
+        homedir = va_arg(args, char*);
         lk_string_assign(settings->homedir, homedir);
         lk_string_chop_end(settings->homedir, "/");
         break;
     case LKHTTPSERVEROPT_CGIDIR:
-        char *cgidir = va_arg(args, char*);
+        cgidir = va_arg(args, char*);
+        if (strlen(cgidir) == 0) {
+            break;
+        }
         lk_string_assign(settings->cgidir, cgidir);
-        lk_string_chop_end(settings->cgidir, "/");
+
+        // Surround cgi dir with slashes: /cgi-bin/ for easy uri matching.
+        if (!lk_string_starts_with(settings->cgidir, "/")) {
+            lk_string_prepend(settings->cgidir, "/");
+        }
+        if (!lk_string_ends_with(settings->cgidir, "/")) {
+            lk_string_append(settings->cgidir, "/");
+        }
         break;
     case LKHTTPSERVEROPT_ALIAS:
-        char *alias_k = va_arg(args, char*);
-        char *alias_v = va_arg(args, char*);
+        alias_k = va_arg(args, char*);
+        alias_v = va_arg(args, char*);
         lk_stringmap_set(settings->aliases, alias_k, lk_string_new(alias_v));
         break;
     default:
@@ -126,6 +143,8 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
 }
 
 int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
+    finalize_settings(server->settings);
+
     printf("home_dir: '%s', cgi_dir: '%s'\n", server->settings->homedir->s, server->settings->cgidir->s);
 
     int z = listen(listen_sock, 5);
@@ -332,8 +351,6 @@ void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *
 #endif
 
     LKHttpServerSettings *settings = server->settings;
-    finalize_settings(settings);
-
     char *method = req->method->s;
     char *uri = req->uri->s;
 
@@ -342,6 +359,12 @@ void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *
         if (!strcmp(uri, "/littlekitten")) {
             lk_httpresponse_add_header(resp, "Content-Type", "text/html");
             lk_buffer_append(resp->body, html_sample, strlen(html_sample));
+            return;
+        }
+
+        // uri matches cgi dir path
+        if (lk_string_starts_with(req->uri, settings->cgidir->s)) {
+            serve_cgi(server, ctx, req, resp);
             return;
         }
 
@@ -449,6 +472,47 @@ char *fileext(char *filepath) {
         p--;
     }
     return filepath;
+}
+
+void serve_cgi(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp) {
+    LKHttpServerSettings *settings = server->settings;
+    char *uri = req->uri->s;
+
+    LKString *cgifile = lk_string_new(settings->homedir->s);
+    lk_string_append(cgifile, req->uri->s);
+
+    if (!lk_file_exists(cgifile->s)) {
+        // uri file not found
+        resp->status = 404;
+        lk_string_assign_sprintf(resp->statustext, "File not found '%s'", uri);
+        lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
+        lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", uri);
+        return;
+    }
+    FILE *f = popen(cgifile->s, "r");
+    lk_string_free(cgifile);
+    if (f == NULL) {
+        resp->status = 500;
+        lk_string_assign_sprintf(resp->statustext, "Server error '%s'", strerror(errno));
+        lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
+        lk_buffer_append_sprintf(resp->body, "Server error '%s'\n", strerror(errno));
+        return;
+    }
+    int fd = fileno(f);
+    if (fd == -1) {
+        resp->status = 500;
+        lk_string_assign_sprintf(resp->statustext, "Server error '%s'", strerror(errno));
+        lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
+        lk_buffer_append_sprintf(resp->body, "Server error '%s'\n", strerror(errno));
+        return;
+    }
+
+    //$$ how does cgi output write the Content-Type?
+    lk_httpresponse_add_header(resp, "Content-Type", "text/html");
+
+    //$$ redirect stderr to resp->body?
+    lk_readfd(fd, resp->body);
+    pclose(f);
 }
 
 

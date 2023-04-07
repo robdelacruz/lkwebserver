@@ -114,9 +114,6 @@ void parse_args(int argc, char *argv[], LKHttpServer *server) {
             LKStringList *parts = lk_string_split(lksarg, "=");
             if (parts->items_len == 2) {
                 LKString *v = lk_stringlist_get(parts, 1);
-                if (!lk_string_starts_with(v, "/")) {
-                    lk_string_prepend(v, "/");
-                }
                 lk_httpserver_setopt(server, LKHTTPSERVEROPT_CGIDIR, v->s);
             }
             lk_stringlist_free(parts);

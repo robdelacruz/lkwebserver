@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "lklib.h"
 #include "lknet.h"
 
@@ -445,5 +447,12 @@ char *lk_astrncat(char *dest, char *src, size_t src_len) {
     dest = realloc(dest, dest_len + src_len + 1);
     strncat(dest, src, src_len);
     return dest;
+}
+
+// Return whether file exists.
+int lk_file_exists(char *filename) {
+    struct stat statbuf;
+    int z = stat(filename, &statbuf);
+    return !z;
 }
 
