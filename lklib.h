@@ -4,6 +4,7 @@
 void lk_print_err(char *s);
 void lk_exit_err(char *s);
 char *lk_vasprintf(char *fmt, va_list args);
+int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err);
 
 /*** LKString ***/
 typedef struct {

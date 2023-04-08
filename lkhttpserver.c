@@ -49,14 +49,17 @@ void free_serversettings(LKHttpServerSettings *settings);
 void finalize_settings(LKHttpServerSettings *settings);
 
 void read_request_from_client(LKHttpServer *server, int clientfd);
-int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx);
-int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx);
+int read_and_parse_line(LKHttpClientContext *ctx);
+int read_and_parse_bytes(LKHttpClientContext *ctx);
 void process_request(LKHttpServer *server, LKHttpClientContext *ctx);
+void process_response(LKHttpServer *server, LKHttpClientContext *ctx);
 
-void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
-void serve_cgi(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
+void serve_files(LKHttpServer *server, LKHttpRequest *req, LKHttpResponse *resp);
 int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
 char *fileext(char *filepath);
+
+void serve_cgi(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
+void *runcgi(void *parg);
 
 void send_response_to_client(LKHttpServer *server, int clientfd);
 int send_buf_bytes(int sock, LKBuffer *buf);
@@ -164,6 +167,9 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
         fd_set cur_readfds = server->readfds;
         fd_set cur_writefds = server->writefds;
         z = select(maxfd+1, &cur_readfds, &cur_writefds, NULL, NULL);
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
         if (z == -1) {
             lk_print_err("select()");
             return z;
@@ -227,12 +233,12 @@ void read_request_from_client(LKHttpServer *server, int clientfd) {
 
     while (1) {
         if (!ctx->reqparser->head_complete) {
-            int z = read_and_parse_line(server, ctx);
+            int z = read_and_parse_line(ctx);
             if (z != 0) {
                 break;
             }
         } else {
-            int z = read_and_parse_bytes(server, ctx);
+            int z = read_and_parse_bytes(ctx);
             if (z != 0) {
                 break;
             }
@@ -246,7 +252,7 @@ void read_request_from_client(LKHttpServer *server, int clientfd) {
 
 // Read and parse one request line from client socket.
 // Return 0 if line was read, 1 if no data, < 0 for socket error.
-int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx) {
+int read_and_parse_line(LKHttpClientContext *ctx) {
     char buf[1000];
     size_t nread;
     int z = lk_socketreader_readline(ctx->sr, buf, sizeof buf, &nread);
@@ -265,7 +271,7 @@ int read_and_parse_line(LKHttpServer *server, LKHttpClientContext *ctx) {
 
 // Read and parse the next sequence of bytes from client socket.
 // Return 0 if bytes were read, 1 if no data, < 0 for socket error.
-int read_and_parse_bytes(LKHttpServer *server, LKHttpClientContext *ctx) {
+int read_and_parse_bytes(LKHttpClientContext *ctx) {
     char buf[2048];
     size_t nread;
     int z = lk_socketreader_readbytes(ctx->sr, buf, sizeof buf, &nread);
@@ -301,7 +307,22 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
 
     LKHttpRequest *req = ctx->reqparser->req;
     LKHttpResponse *resp = ctx->resp;
-    serve_files(server, ctx, req, resp);
+    LKHttpServerSettings *settings = server->settings;
+
+    // Run cgi script if uri falls under cgidir
+    if (lk_string_starts_with(req->uri, settings->cgidir->s)) {
+        serve_cgi(server, ctx, req, resp);
+        return;
+    }
+
+    serve_files(server, ctx->reqparser->req, ctx->resp);
+    process_response(server, ctx);
+}
+
+void process_response(LKHttpServer *server, LKHttpClientContext *ctx) {
+    LKHttpRequest *req = ctx->reqparser->req;
+    LKHttpResponse *resp = ctx->resp;
+
     lk_httpresponse_finalize(resp);
 
     char time_str[TIME_STRING_SIZE];
@@ -322,7 +343,7 @@ void process_request(LKHttpServer *server, LKHttpClientContext *ctx) {
 }
 
 // Generate an http response to an http request.
-void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp) {
+void serve_files(LKHttpServer *server, LKHttpRequest *req, LKHttpResponse *resp) {
     int z;
     static char *html_error_start = 
        "<!DOCTYPE html>\n"
@@ -359,12 +380,6 @@ void serve_files(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *
         if (!strcmp(uri, "/littlekitten")) {
             lk_httpresponse_add_header(resp, "Content-Type", "text/html");
             lk_buffer_append(resp->body, html_sample, strlen(html_sample));
-            return;
-        }
-
-        // uri matches cgi dir path
-        if (lk_string_starts_with(req->uri, settings->cgidir->s)) {
-            serve_cgi(server, ctx, req, resp);
             return;
         }
 
@@ -474,6 +489,12 @@ char *fileext(char *filepath) {
     return filepath;
 }
 
+struct cgiparams_s {
+    LKString *cgifile;
+    LKHttpServer *server;
+    LKHttpClientContext *ctx;
+};
+
 void serve_cgi(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp) {
     LKHttpServerSettings *settings = server->settings;
     char *uri = req->uri->s;
@@ -481,38 +502,86 @@ void serve_cgi(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *re
     LKString *cgifile = lk_string_new(settings->homedir->s);
     lk_string_append(cgifile, req->uri->s);
 
+    // cgi file not found
     if (!lk_file_exists(cgifile->s)) {
-        // uri file not found
+        lk_string_free(cgifile);
+
         resp->status = 404;
         lk_string_assign_sprintf(resp->statustext, "File not found '%s'", uri);
         lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
         lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", uri);
+
+        process_response(server, ctx);
         return;
     }
-    FILE *f = popen(cgifile->s, "r");
+
+    struct cgiparams_s cgiparams;
+    cgiparams.cgifile = cgifile;
+    cgiparams.server = server;
+    cgiparams.ctx = ctx;
+
+    pthread_t t;
+    int z = pthread_create(&t, NULL, runcgi, &cgiparams);
+    if (z != 0) {
+        lk_string_free(cgifile);
+
+        resp->status = 500;
+        errno = z;
+        lk_string_assign_sprintf(resp->statustext, "pthread_create() '%s'", strerror(errno));
+        lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
+        lk_buffer_append_sprintf(resp->body, "pthread_create() '%s'\n", strerror(errno));
+        process_response(server, ctx);
+        return;
+    }
+
+    //z = pthread_detach(t);
+    z = pthread_join(t, NULL);
+    if (z != 0) {
+        resp->status = 500;
+        errno = z;
+        lk_string_assign_sprintf(resp->statustext, "pthread_detach() '%s'", strerror(errno));
+        lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
+        lk_buffer_append_sprintf(resp->body, "pthread_detach() '%s'\n", strerror(errno));
+        process_response(server, ctx);
+        return;
+    }
+}
+
+void *runcgi(void *parg) {
+    printf("*** Start runcgi() function...\n");
+
+    struct cgiparams_s *cgiparams = parg;
+    LKString *cgifile = cgiparams->cgifile;
+    LKHttpServer *server = cgiparams->server;
+    LKHttpClientContext *ctx = cgiparams->ctx;
+
+    LKHttpResponse *resp = ctx->resp;
+
+    int fd_in, fd_out, fd_err;
+    int z = lk_popen3(cgifile->s, &fd_in, &fd_out, &fd_err);
     lk_string_free(cgifile);
-    if (f == NULL) {
+    if (z == -1) {
         resp->status = 500;
         lk_string_assign_sprintf(resp->statustext, "Server error '%s'", strerror(errno));
         lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
         lk_buffer_append_sprintf(resp->body, "Server error '%s'\n", strerror(errno));
-        return;
-    }
-    int fd = fileno(f);
-    if (fd == -1) {
-        resp->status = 500;
-        lk_string_assign_sprintf(resp->statustext, "Server error '%s'", strerror(errno));
-        lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
-        lk_buffer_append_sprintf(resp->body, "Server error '%s'\n", strerror(errno));
-        return;
+        process_response(server, ctx);
+        return NULL;
     }
 
     //$$ how does cgi output write the Content-Type?
     lk_httpresponse_add_header(resp, "Content-Type", "text/html");
 
-    //$$ redirect stderr to resp->body?
-    lk_readfd(fd, resp->body);
-    pclose(f);
+    lk_readfd(fd_err, resp->body);
+    lk_readfd(fd_out, resp->body);
+    process_response(server, ctx);
+
+    close(fd_in);
+    close(fd_out);
+    close(fd_err);
+
+    printf("*** End runcgi() function\n");
+    return NULL;
 }
 
 
