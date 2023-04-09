@@ -24,10 +24,11 @@
 
 struct httpclientcontext {
     int sock;                         // client socket
-    struct sockaddr *client_sa;       // client address
+    struct sockaddr_in client_sa;     // client address
     LKString *client_ipaddr;          // client ip address string
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequestParser *reqparser;   // parser for httprequest
+    LKHttpRequest *req;               // http request so far
     LKHttpResponse *resp;             // http response to be sent
     struct httpclientcontext *next;   // link to next client
 };
@@ -39,7 +40,7 @@ struct httpserversettings {
 };
 
 // local functions
-LKHttpClientContext *create_clientcontext(int sock, struct sockaddr *sa);
+LKHttpClientContext *create_clientcontext(int sock, struct sockaddr_in sa);
 void free_clientcontext(LKHttpClientContext *ctx);
 void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx);
 void remove_clientcontext(LKHttpClientContext **pphead, int sock);
@@ -185,8 +186,8 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                 // New client connection
                 if (i == listen_sock) {
                     socklen_t sa_len = sizeof(struct sockaddr_in);
-                    struct sockaddr_in *sa = malloc(sa_len);
-                    int newclientsock = accept(listen_sock, (struct sockaddr*)sa, &sa_len);
+                    struct sockaddr_in sa;
+                    int newclientsock = accept(listen_sock, (struct sockaddr*)&sa, &sa_len);
                     if (newclientsock == -1) {
                         lk_print_err("accept()");
                         continue;
@@ -199,7 +200,7 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                     }
 
                     //printf("read fd: %d\n", newclientsock);
-                    LKHttpClientContext *ctx = create_clientcontext(newclientsock, (struct sockaddr*) sa);
+                    LKHttpClientContext *ctx = create_clientcontext(newclientsock, sa);
                     add_clientcontext(&server->ctxhead, ctx);
                     continue;
                 } else {
@@ -659,33 +660,30 @@ void terminate_client_session(LKHttpServer *server, int clientfd) {
 
 /*** LKHttpClientContext functions ***/
 
-LKHttpClientContext *create_clientcontext(int sock, struct sockaddr *sa) {
+LKHttpClientContext *create_clientcontext(int sock, struct sockaddr_in sa) {
     LKHttpClientContext *ctx = malloc(sizeof(LKHttpClientContext));
     ctx->sock = sock;
     ctx->client_sa = sa;
-    ctx->client_ipaddr = lk_get_ipaddr_string(sa);
+    ctx->client_ipaddr = lk_get_ipaddr_string((struct sockaddr *) &sa);
     ctx->sr = lk_socketreader_new(sock, 0);
-    ctx->reqparser = lk_httprequestparser_new();
+    ctx->req = lk_httprequest_new();
+    ctx->reqparser = lk_httprequestparser_new(ctx->req);
     ctx->resp = lk_httpresponse_new();
     ctx->next = NULL;
     return ctx;
 }
 
 void free_clientcontext(LKHttpClientContext *ctx) {
-    if (ctx->client_sa) {
-        free(ctx->client_sa);
-    }
     lk_string_free(ctx->client_ipaddr);
     lk_socketreader_free(ctx->sr);
     lk_httprequestparser_free(ctx->reqparser);
-    if (ctx->resp) {
-        lk_httpresponse_free(ctx->resp);
-    }
+    lk_httprequest_free(ctx->req);
+    lk_httpresponse_free(ctx->resp);
 
-    ctx->client_sa = NULL;
     ctx->client_ipaddr = NULL;
     ctx->sr = NULL;
     ctx->reqparser = NULL;
+    ctx->req = NULL;
     ctx->resp = NULL;
     ctx->next = NULL;
     free(ctx);

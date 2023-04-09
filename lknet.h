@@ -70,7 +70,7 @@ typedef struct {
     LKHttpRequest *req;             // httprequest to output to while parsing
 } LKHttpRequestParser;
 
-LKHttpRequestParser *lk_httprequestparser_new();
+LKHttpRequestParser *lk_httprequestparser_new(LKHttpRequest *req);
 void lk_httprequestparser_free(LKHttpRequestParser *parser);
 void lk_httprequestparser_reset(LKHttpRequestParser *parser);
 void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);

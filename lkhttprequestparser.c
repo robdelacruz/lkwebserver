@@ -16,20 +16,20 @@ int is_empty_line(char *s);
 int ends_with_newline(char *s);
 
 /*** LKHttpRequestParser functions ***/
-LKHttpRequestParser *lk_httprequestparser_new() {
+LKHttpRequestParser *lk_httprequestparser_new(LKHttpRequest *req) {
     LKHttpRequestParser *parser = malloc(sizeof(LKHttpRequestParser));
     parser->partial_line = lk_string_new("");
     parser->nlinesread = 0;
     parser->content_length = 0;
     parser->head_complete = 0;
     parser->body_complete = 0;
-    parser->req = lk_httprequest_new();
+    parser->req = req;
     return parser;
 }
 
 void lk_httprequestparser_free(LKHttpRequestParser *parser) {
     lk_string_free(parser->partial_line);
-    lk_httprequest_free(parser->req);
+    parser->partial_line = NULL;
     parser->req = NULL;
     free(parser);
 }
@@ -41,9 +41,6 @@ void lk_httprequestparser_reset(LKHttpRequestParser *parser) {
     parser->content_length = 0;
     parser->head_complete = 0;
     parser->body_complete = 0;
-
-    lk_httprequest_free(parser->req);
-    parser->req = lk_httprequest_new();
 }
 
 // Parse one line and cumulatively compile results into parser->req.
