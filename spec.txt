@@ -65,6 +65,10 @@ application/javascript json xml zip pdf
 audio/mpeg
 video/mpeg mp4 quicktime webm
 
+cgi:
+https://docstore.mik.ua/orelly/linux/cgi/ch03_03.htm
+The Status header is different than the other headers because it does not map directly to an HTTP header, although it is associated with the status line. This field is used only to exchange information between the CGI script and the web server. It specifies the status code the server should include in the status line of the request. This field is optional: if you do not print it, the web server will automatically add a status of 200 OK to your output if you print a Content-type header, and a status of 302 Found if you print a Location header.
+
 
 
 
