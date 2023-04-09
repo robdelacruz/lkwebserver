@@ -22,15 +22,30 @@
 #include "lklib.h"
 #include "lknet.h"
 
+typedef enum {CTX_FD_CLIENT, CTX_FD_SERVEFILE, CTX_FD_SERVECGI} CtxFDType;
+
 struct httpclientcontext {
-    int sock;                         // client socket
+    // socket or file/cgi stream file descriptor used in select()
+    // This might be one of the following:
+    // - client socket to read httprequest and send httpresponse
+    // - file fd to be sent to response body
+    // - cgi output fd to be sent to response body
+    int fd;
+    CtxFDType fd_type;
+
+    // Client attributes - used when a client connects to the server.
+    // For receiving requests and sending responses to client.
     struct sockaddr_in client_sa;     // client address
     LKString *client_ipaddr;          // client ip address string
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequestParser *reqparser;   // parser for httprequest
     LKHttpRequest *req;               // http request so far
     LKHttpResponse *resp;             // http response to be sent
-    struct httpclientcontext *next;   // link to next client
+
+    // File attributes - used for serving file or cgi streams.
+    // For reading files/cgi streams and writing contents to response body.
+ 
+    struct httpclientcontext *next;   // link to next ctx
 };
 
 struct httpserversettings {
@@ -40,16 +55,17 @@ struct httpserversettings {
 };
 
 // local functions
-LKHttpClientContext *create_clientcontext(int sock, struct sockaddr_in sa);
+LKHttpClientContext *create_clientcontext(int fd, CtxFDType fd_type);
 void free_clientcontext(LKHttpClientContext *ctx);
 void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx);
-void remove_clientcontext(LKHttpClientContext **pphead, int sock);
+void remove_clientcontext(LKHttpClientContext **pphead, int fd);
 
 LKHttpServerSettings *create_serversettings();
 void free_serversettings(LKHttpServerSettings *settings);
 void finalize_settings(LKHttpServerSettings *settings);
 
-void read_request_from_client(LKHttpServer *server, int clientfd);
+LKHttpClientContext *get_clientctx(LKHttpServer *server, int fd);
+void read_request_from_client(LKHttpServer *server, LKHttpClientContext *ctx);
 int read_and_parse_line(LKHttpClientContext *ctx);
 int read_and_parse_bytes(LKHttpClientContext *ctx);
 void process_request(LKHttpServer *server, LKHttpClientContext *ctx);
@@ -62,7 +78,7 @@ char *fileext(char *filepath);
 void serve_cgi(LKHttpServer *server, LKHttpClientContext *ctx, LKHttpRequest *req, LKHttpResponse *resp);
 void *runcgi(void *parg);
 
-void send_response_to_client(LKHttpServer *server, int clientfd);
+void send_response_to_client(LKHttpServer *server, LKHttpClientContext *ctx);
 int send_buf_bytes(int sock, LKBuffer *buf);
 void terminate_client_session(LKHttpServer *server, int clientfd);
 
@@ -200,19 +216,45 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                     }
 
                     //printf("read fd: %d\n", newclientsock);
-                    LKHttpClientContext *ctx = create_clientcontext(newclientsock, sa);
+                    LKHttpClientContext *ctx = create_clientcontext(newclientsock, CTX_FD_CLIENT);
+                    ctx->client_sa = sa;
+                    lk_string_free(ctx->client_ipaddr);
+                    ctx->client_ipaddr = lk_get_ipaddr_string((struct sockaddr *) &sa);
                     add_clientcontext(&server->ctxhead, ctx);
                     continue;
                 } else {
-                    // i contains client socket with data available to be read.
-                    int clientfd = i;
-                    read_request_from_client(server, clientfd);
+                    // i contains fd with data available to be read.
+                    // fd could be a client socket with http request, server file,
+                    // or cgi output stream
+                    int fd = i;
+                    LKHttpClientContext *ctx = get_clientctx(server, fd);
+                    if (ctx == NULL) {
+                        printf("fd %d for read not in clients list\n", fd);
+                        continue;
+                    }
+                    assert(ctx->fd == fd);
+
+                    if (ctx->fd_type == CTX_FD_CLIENT) {
+                        assert(ctx->sr->sock == fd);
+                        read_request_from_client(server, ctx);
+                        continue;
+                    }
                 }
             } else if (FD_ISSET(i, &cur_writefds)) {
                 //printf("write fd %d\n", i);
                 // i contains client socket ready to be written to.
                 int clientfd = i;
-                send_response_to_client(server, clientfd);
+                LKHttpClientContext *ctx = get_clientctx(server, clientfd);
+                if (ctx == NULL) {
+                    printf("clientfd %d for write not in clients list\n", clientfd);
+                    continue;
+                }
+                assert(ctx->fd == clientfd);
+                assert(ctx->sr->sock == clientfd);
+                assert(ctx->resp != NULL);
+                assert(ctx->resp->head != NULL);
+
+                send_response_to_client(server, ctx);
             }
         }
     } // while (1)
@@ -220,18 +262,15 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
     return 0;
 }
 
-void read_request_from_client(LKHttpServer *server, int clientfd) {
+LKHttpClientContext *get_clientctx(LKHttpServer *server, int fd) {
     LKHttpClientContext *ctx = server->ctxhead;
-    while (ctx != NULL && ctx->sock != clientfd) {
+    while (ctx != NULL && ctx->fd != fd) {
         ctx = ctx->next;
     }
-    if (ctx == NULL) {
-        printf("read_request_from_client() clientfd %d not in clients list\n", clientfd);
-        return;
-    }
-    assert(ctx->sock == clientfd);
-    assert(ctx->sr->sock == clientfd);
+    return ctx;
+}
 
+void read_request_from_client(LKHttpServer *server, LKHttpClientContext *ctx) {
     while (1) {
         if (!ctx->reqparser->head_complete) {
             int z = read_and_parse_line(ctx);
@@ -246,6 +285,11 @@ void read_request_from_client(LKHttpServer *server, int clientfd) {
         }
 
         if (ctx->reqparser->body_complete) {
+            FD_CLR(ctx->fd, &server->readfds);
+            int z = shutdown(ctx->fd, SHUT_RD);
+            if (z == -1) {
+                lk_print_err("read_request_from_client(): shutdown()");
+            }
             process_request(server, ctx);
         }
     }
@@ -339,7 +383,7 @@ void process_response(LKHttpServer *server, LKHttpClientContext *ctx) {
             resp->status, resp->statustext->s);
     }
 
-    FD_SET(ctx->sock, &server->writefds);
+    FD_SET(ctx->fd, &server->writefds);
     return;
 }
 
@@ -586,41 +630,28 @@ void *runcgi(void *parg) {
 }
 
 
-void send_response_to_client(LKHttpServer *server, int clientfd) {
-    LKHttpClientContext *ctx = server->ctxhead;
-    while (ctx != NULL && ctx->sock != clientfd) {
-        ctx = ctx->next;
-    }
-    if (ctx == NULL) {
-        printf("send_response_to_client() clientfd %d not in clients list\n", clientfd);
-        return;
-    }
-    assert(ctx->sock == clientfd);
-    assert(ctx->sr->sock == clientfd);
-    assert(ctx->resp != NULL);
-    assert(ctx->resp->head != NULL);
-
+void send_response_to_client(LKHttpServer *server, LKHttpClientContext *ctx) {
     LKHttpResponse *resp = ctx->resp;
 
     // Send as much response bytes as the client will receive.
     // Send response head bytes first, then response body bytes.
     if (resp->head->bytes_cur < resp->head->bytes_len) {
-        int z = send_buf_bytes(ctx->sock, resp->head);
+        int z = send_buf_bytes(ctx->fd, resp->head);
         if (z == -1 && errno == EPIPE) {
             // client socket was shutdown
-            terminate_client_session(server, ctx->sock);
+            terminate_client_session(server, ctx->fd);
             return;
         }
     } else if (resp->body->bytes_cur < resp->body->bytes_len) {
-        int z = send_buf_bytes(ctx->sock, resp->body);
+        int z = send_buf_bytes(ctx->fd, resp->body);
         if (z == -1 && errno == EPIPE) {
             // client socket was shutdown
-            terminate_client_session(server, ctx->sock);
+            terminate_client_session(server, ctx->fd);
             return;
         }
     } else {
         // Completed sending http response.
-        terminate_client_session(server, ctx->sock);
+        terminate_client_session(server, ctx->fd);
     }
 }
 
@@ -645,7 +676,7 @@ void terminate_client_session(LKHttpServer *server, int clientfd) {
     FD_CLR(clientfd, &server->writefds);
 
     // Close read and writes.
-    int z= shutdown(clientfd, SHUT_RDWR);
+    int z = shutdown(clientfd, SHUT_RDWR);
     if (z == -1) {
         lk_print_err("shutdown()");
     }
@@ -660,15 +691,17 @@ void terminate_client_session(LKHttpServer *server, int clientfd) {
 
 /*** LKHttpClientContext functions ***/
 
-LKHttpClientContext *create_clientcontext(int sock, struct sockaddr_in sa) {
+LKHttpClientContext *create_clientcontext(int fd, CtxFDType fd_type) {
     LKHttpClientContext *ctx = malloc(sizeof(LKHttpClientContext));
-    ctx->sock = sock;
-    ctx->client_sa = sa;
-    ctx->client_ipaddr = lk_get_ipaddr_string((struct sockaddr *) &sa);
-    ctx->sr = lk_socketreader_new(sock, 0);
+    ctx->fd = fd;
+    ctx->fd_type = fd_type;
+
+    ctx->client_ipaddr = lk_string_new("");
+    ctx->sr = lk_socketreader_new(fd, 0);
     ctx->req = lk_httprequest_new();
     ctx->reqparser = lk_httprequestparser_new(ctx->req);
     ctx->resp = lk_httpresponse_new();
+
     ctx->next = NULL;
     return ctx;
 }
@@ -689,7 +722,7 @@ void free_clientcontext(LKHttpClientContext *ctx) {
     free(ctx);
 }
 
-// Add ctx to end of clientctx linked list. Skip if ctx sock already in list.
+// Add ctx to end of clientctx linked list. Skip if ctx fd already in list.
 void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx) {
     assert(pphead != NULL);
 
@@ -700,8 +733,8 @@ void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx) {
         // add client to end of clients list
         LKHttpClientContext *p = *pphead;
         while (p->next != NULL) {
-            // ctx sock already exists
-            if (p->sock == ctx->sock) {
+            // ctx fd already exists
+            if (p->fd == ctx->fd) {
                 return;
             }
             p = p->next;
@@ -710,15 +743,15 @@ void add_clientcontext(LKHttpClientContext **pphead, LKHttpClientContext *ctx) {
     }
 }
 
-// Remove ctx sock from clientctx linked list.
-void remove_clientcontext(LKHttpClientContext **pphead, int sock) {
+// Remove ctx fd from clientctx linked list.
+void remove_clientcontext(LKHttpClientContext **pphead, int fd) {
     assert(pphead != NULL);
 
     if (*pphead == NULL) {
         return;
     }
     // remove head ctx
-    if ((*pphead)->sock == sock) {
+    if ((*pphead)->fd == fd) {
         LKHttpClientContext *tmp = *pphead;
         *pphead = (*pphead)->next;
         free_clientcontext(tmp);
@@ -728,7 +761,7 @@ void remove_clientcontext(LKHttpClientContext **pphead, int sock) {
     LKHttpClientContext *p = *pphead;
     LKHttpClientContext *prev = NULL;
     while (p != NULL) {
-        if (p->sock == sock) {
+        if (p->fd == fd) {
             assert(prev != NULL);
             prev->next = p->next;
             free_clientcontext(p);
