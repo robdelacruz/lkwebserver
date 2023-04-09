@@ -23,6 +23,11 @@
 
 
 // local functions
+void FD_SET_READ(int fd, LKHttpServer *server);
+void FD_SET_WRITE(int fd, LKHttpServer *server);
+void FD_CLR_READ(int fd, LKHttpServer *server);
+void FD_CLR_WRITE(int fd, LKHttpServer *server);
+
 LKHttpServerContext *create_context(int fd, struct sockaddr_in *sa);
 void free_context(LKHttpServerContext *ctx);
 void add_context(LKHttpServerContext **pphead, LKHttpServerContext *ctx);
@@ -65,7 +70,13 @@ LKHttpServer *lk_httpserver_new() {
 }
 
 void lk_httpserver_free(LKHttpServer *server) {
-    //$$ free ctxhead ctx linked list?
+    // Free ctx linked list
+    LKHttpServerContext *ctx = server->ctxhead;
+    while (ctx != NULL) {
+        LKHttpServerContext *ptmp = ctx;
+        ctx = ctx->next;
+        free_context(ptmp);
+    }
 
     free_serversettings(server->settings);
     memset(server, 0, sizeof(LKHttpServer));
@@ -134,6 +145,25 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
     va_end(args);
 }
 
+void FD_SET_READ(int fd, LKHttpServer *server) {
+    FD_SET(fd, &server->readfds);
+    if (fd > server->maxfd) {
+        server->maxfd = fd;
+    }
+}
+void FD_SET_WRITE(int fd, LKHttpServer *server) {
+    FD_SET(fd, &server->writefds);
+    if (fd > server->maxfd) {
+        server->maxfd = fd;
+    }
+}
+void FD_CLR_READ(int fd, LKHttpServer *server) {
+    FD_CLR(fd, &server->readfds);
+}
+void FD_CLR_WRITE(int fd, LKHttpServer *server) {
+    FD_CLR(fd, &server->writefds);
+}
+
 int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
     finalize_settings(server->settings);
 
@@ -147,9 +177,7 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
 
     FD_ZERO(&server->readfds);
     FD_ZERO(&server->writefds);
-
-    FD_SET(listen_sock, &server->readfds);
-    server->maxfd = listen_sock;
+    FD_SET_READ(listen_sock, server);
 
     while (1) {
         // readfds contain the master list of read sockets
@@ -182,10 +210,7 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
                     }
 
                     // Add new client socket to list of read sockets.
-                    FD_SET(newclientsock, &server->readfds);
-                    if (newclientsock > server->maxfd) {
-                        server->maxfd = newclientsock;
-                    }
+                    FD_SET_READ(newclientsock, server);
 
                     LKHttpServerContext *ctx = create_context(newclientsock, &sa);
                     add_context(&server->ctxhead, ctx);
@@ -255,7 +280,7 @@ void read_request_from_client(LKHttpServer *server, LKHttpServerContext *ctx) {
         }
 
         if (ctx->reqparser->body_complete) {
-            FD_CLR(ctx->fd, &server->readfds);
+            FD_CLR_READ(ctx->fd, server);
             int z = shutdown(ctx->fd, SHUT_RD);
             if (z == -1) {
                 lk_print_err("read_request_from_client(): shutdown()");
@@ -349,10 +374,7 @@ void process_response(LKHttpServer *server, LKHttpServerContext *ctx) {
             resp->status, resp->statustext->s);
     }
 
-    FD_SET(ctx->fd, &server->writefds);
-    if (ctx->fd > server->maxfd) {
-        server->maxfd = ctx->fd;
-    }
+    FD_SET_WRITE(ctx->fd, server);
     return;
 }
 
@@ -376,7 +398,7 @@ void read_responsefile(LKHttpServer *server, LKHttpServerContext *ctx) {
         // EOF - finished reading this file.
         if (z == 0 && nread == 0) {
             // Remove server/cgi file from read list.
-            FD_CLR(ctx->serverfile_fd, &server->readfds);
+            FD_CLR_READ(ctx->serverfile_fd, server);
             z = close(ctx->serverfile_fd);
             if (z == -1) {
                 lk_print_err("close()");
@@ -444,8 +466,7 @@ void serve_files(LKHttpServer *server, LKHttpServerContext *ctx) {
             uri = alias_uri->s;
         }
 
-        // if no page given, try opening index.html, ...
-        //$$ Better way to do this?
+        // For root, default to index.html, ...
         if (!strcmp(uri, "/")) {
             while (1) {
                 z = read_uri_file(settings->homedir->s, "/index.html", resp->body);
@@ -592,10 +613,7 @@ void serve_cgi(LKHttpServer *server, LKHttpServerContext *ctx) {
 
     // Set cgi output to select() readfds to be read in read_responsefile()
     ctx->serverfile_fd = fd_out;
-    FD_SET(fd_out, &server->readfds);
-    if (fd_out > server->maxfd) {
-        server->maxfd = fd_out;
-    }
+    FD_SET_READ(fd_out, server);
 }
 
 void send_response_to_client(LKHttpServer *server, LKHttpServerContext *ctx) {
@@ -637,13 +655,9 @@ int send_buf_bytes(int sock, LKBuffer *buf) {
 
 // Disconnect from client.
 void terminate_client_session(LKHttpServer *server, int clientfd) {
-    //printf("terminate_client fd %d\n", clientfd);
+    FD_CLR_READ(clientfd, server);
+    FD_CLR_WRITE(clientfd, server);
 
-    // Remove select() read and write I/O
-    FD_CLR(clientfd, &server->readfds);
-    FD_CLR(clientfd, &server->writefds);
-
-    // Close read and writes.
     int z = shutdown(clientfd, SHUT_RDWR);
     if (z == -1) {
         lk_print_err("shutdown()");
