@@ -110,6 +110,33 @@ int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent) {
     return 0;
 }
 
+// Read count bytes into buf (supports nonblocking via open O_NONBLOCK flag).
+// Returns 0 for success, -1 for error.
+// On return, ret_nread contains the number of bytes read.
+int lk_read(int fd, char *buf, size_t count, size_t *ret_nread) {
+    size_t nread = 0;
+    while (nread < count) {
+        int z = read(fd, buf+nread, count-nread);
+        // EOF
+        if (z == 0) {
+            break;
+        }
+        // interrupt occured during read, retry read.
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        if (z == -1) {
+            // errno is set to EAGAIN/EWOULDBLOCK if fd is blocked
+            *ret_nread = nread;
+            return -1;
+        }
+        nread += z;
+    }
+    *ret_nread = nread;
+    return 0;
+}
+
+
 /** lksocketreader functions **/
 
 LKSocketReader *lk_socketreader_new(int sock, size_t buf_size) {

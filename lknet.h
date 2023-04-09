@@ -78,14 +78,35 @@ void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, si
 
 
 /*** LKHttpServer ***/
-typedef struct httpclientcontext LKHttpClientContext;
-typedef struct httpserversettings LKHttpServerSettings;
+
+typedef struct serverctx_s {
+    // client socket fd
+    int fd;
+    // response file fd (static server file or cgi output)
+    int serverfile_fd;
+
+    struct sockaddr_in client_sa;     // client address
+    LKString *client_ipaddr;          // client ip address string
+    LKSocketReader *sr;               // input buffer for reading lines
+    LKHttpRequestParser *reqparser;   // parser for httprequest
+    LKHttpRequest *req;               // http request so far
+    LKHttpResponse *resp;             // http response to be sent
+
+    struct serverctx_s *next;           // link to next ctx
+} LKHttpServerContext;
 
 typedef struct {
-    LKHttpClientContext *ctxhead;
+    LKString *homedir;
+    LKString *cgidir;
+    LKStringMap *aliases;
+} LKHttpServerSettings;
+
+typedef struct {
+    LKHttpServerContext *ctxhead;
     LKHttpServerSettings *settings;
     fd_set readfds;
     fd_set writefds;
+    int maxfd;
 } LKHttpServer;
 
 typedef enum {
@@ -107,7 +128,11 @@ void lk_set_sock_timeout(int sock, int nsecs, int ms);
 void lk_set_sock_nonblocking(int sock);
 LKString *lk_get_ipaddr_string(struct sockaddr *sa);
 
+
 /*** Other helper functions ***/
+
+// File equivalent of lk_sock_recv()
+int lk_read(int fd, char *buf, size_t count, size_t *ret_nread);
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s);
 // Read entire file into buf.

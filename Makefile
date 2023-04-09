@@ -1,4 +1,4 @@
-CFLAGS=-g -Wall -pthread
+CFLAGS=-g -Wall
 LIBS=
 LKLIB_SRC=lklib.c lkstring.c lkstringmap.c lkbuffer.c lknet.c lkstringlist.c lkhttpserver.c lkhttprequestparser.c
 
