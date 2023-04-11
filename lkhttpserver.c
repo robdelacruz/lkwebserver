@@ -135,7 +135,7 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
     case LKHTTPSERVEROPT_ALIAS:
         alias_k = va_arg(args, char*);
         alias_v = va_arg(args, char*);
-        lk_stringmap_set(settings->aliases, alias_k, lk_string_new(alias_v));
+        lk_stringtable_set(settings->aliases, alias_k, alias_v);
         break;
     default:
         break;
@@ -444,9 +444,9 @@ void serve_files(LKHttpServer *server, LKHttpServerContext *ctx) {
 
         // Use alias if there's a match for uri.
         // Ex. uri: "/latest" => "/latest.html"
-        LKString *alias_uri = lk_stringmap_get(settings->aliases, uri);
+        char *alias_uri = lk_stringtable_get(settings->aliases, uri);
         if (alias_uri != NULL) {
-            uri = alias_uri->s;
+            uri = alias_uri;
         }
 
         // For root, default to index.html, ...
@@ -769,14 +769,14 @@ LKHttpServerSettings *create_serversettings() {
     LKHttpServerSettings *settings = malloc(sizeof(LKHttpServerSettings));
     settings->homedir = lk_string_new("");
     settings->cgidir = lk_string_new("");
-    settings->aliases = lk_stringmap_funcs_new(lk_string_voidp_free);
+    settings->aliases = lk_stringtable_new();
     return settings;
 }
 
 void free_serversettings(LKHttpServerSettings *settings) {
     lk_string_free(settings->homedir);
     lk_string_free(settings->cgidir);
-    lk_stringmap_free(settings->aliases);
+    lk_stringtable_free(settings->aliases);
 
     settings->homedir = NULL;
     settings->cgidir = NULL;

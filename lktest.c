@@ -248,65 +248,65 @@ void lkstring_test() {
 }
 
 void lkstringmap_test() {
-    LKStringMap *sm;
+    LKStringTable *st;
     void *v;
 
-    printf("Running LKStringMap tests... ");
-    sm = lk_stringmap_funcs_new(free);
-    assert(sm->items_len == 0);
+    printf("Running LKStringTable tests... ");
+    st = lk_stringtable_new();
+    assert(st->items_len == 0);
 
-    lk_stringmap_set(sm, "abc", strdup("ABC"));
-    lk_stringmap_set(sm, "def", strdup("DEF"));
-    lk_stringmap_set(sm, "ghi", strdup("GHI"));
-    lk_stringmap_set(sm, "hij", strdup("HIJ"));
-    lk_stringmap_set(sm, "klm", strdup("KLM"));
-    assert(sm->items_len == 5);
+    lk_stringtable_set(st, "abc", "ABC");
+    lk_stringtable_set(st, "def", "DEF");
+    lk_stringtable_set(st, "ghi", "GHI");
+    lk_stringtable_set(st, "hij", "HIJ");
+    lk_stringtable_set(st, "klm", "KLM");
+    assert(st->items_len == 5);
 
-    lk_stringmap_remove(sm, "ab");
-    assert(sm->items_len == 5);
-    lk_stringmap_remove(sm, "");
-    assert(sm->items_len == 5);
-    lk_stringmap_remove(sm, "ghi");
-    assert(sm->items_len == 4);
-    lk_stringmap_remove(sm, "klm");
-    assert(sm->items_len == 3);
-    lk_stringmap_remove(sm, "hij");
-    lk_stringmap_remove(sm, "hij");
-    assert(sm->items_len == 2);
+    lk_stringtable_remove(st, "ab");
+    assert(st->items_len == 5);
+    lk_stringtable_remove(st, "");
+    assert(st->items_len == 5);
+    lk_stringtable_remove(st, "ghi");
+    assert(st->items_len == 4);
+    lk_stringtable_remove(st, "klm");
+    assert(st->items_len == 3);
+    lk_stringtable_remove(st, "hij");
+    lk_stringtable_remove(st, "hij");
+    assert(st->items_len == 2);
 
-    lk_stringmap_set(sm, "123", strdup("one two three"));
-    lk_stringmap_set(sm, "  ", strdup("space space"));
-    lk_stringmap_set(sm, "", strdup("(blank)"));
-    assert(sm->items_len == 5);
+    lk_stringtable_set(st, "123", "one two three");
+    lk_stringtable_set(st, "  ", "space space");
+    lk_stringtable_set(st, "", "(blank)");
+    assert(st->items_len == 5);
 
-    v = lk_stringmap_get(sm, "abc");
+    v = lk_stringtable_get(st, "abc");
     assert(!strcmp(v, "ABC"));
 
-    lk_stringmap_set(sm, "abc", strdup("A B C"));
-    v = lk_stringmap_get(sm, "abc");
-    assert(sm->items_len == 5);
+    lk_stringtable_set(st, "abc", "A B C");
+    v = lk_stringtable_get(st, "abc");
+    assert(st->items_len == 5);
     assert(strcmp(v, "ABC"));
     assert(!strcmp(v, "A B C"));
 
-    lk_stringmap_set(sm, "abc ", strdup("ABC(space)"));
-    assert(sm->items_len == 6);
-    v = lk_stringmap_get(sm, "abc ");
+    lk_stringtable_set(st, "abc ", "ABC(space)");
+    assert(st->items_len == 6);
+    v = lk_stringtable_get(st, "abc ");
     assert(!strcmp(v, "ABC(space)"));
-    v = lk_stringmap_get(sm, "abc");
+    v = lk_stringtable_get(st, "abc");
     assert(!strcmp(v, "A B C"));
 
-    v = lk_stringmap_get(sm, "ABC");
+    v = lk_stringtable_get(st, "ABC");
     assert(v == NULL);
-    v = lk_stringmap_get(sm, "123");
+    v = lk_stringtable_get(st, "123");
     assert(!strcmp(v, "one two three"));
-    v = lk_stringmap_get(sm, "  ");
+    v = lk_stringtable_get(st, "  ");
     assert(!strcmp(v, "space space"));
-    v = lk_stringmap_get(sm, " ");
+    v = lk_stringtable_get(st, " ");
     assert(v == NULL);
-    v = lk_stringmap_get(sm, "");
+    v = lk_stringtable_get(st, "");
     assert(!strcmp(v, "(blank)"));
 
-    lk_stringmap_free(sm);
+    lk_stringtable_free(st);
     printf("Done.\n");
 }
 

@@ -291,7 +291,7 @@ LKHttpRequest *lk_httprequest_new() {
     req->method = lk_string_new("");
     req->uri = lk_string_new("");
     req->version = lk_string_new("");
-    req->headers = lk_stringmap_funcs_new(lk_string_voidp_free);
+    req->headers = lk_stringtable_new();
     req->head = lk_buffer_new(0);
     req->body = lk_buffer_new(0);
     return req;
@@ -301,7 +301,7 @@ void lk_httprequest_free(LKHttpRequest *req) {
     lk_string_free(req->method);
     lk_string_free(req->uri);
     lk_string_free(req->version);
-    lk_stringmap_free(req->headers);
+    lk_stringtable_free(req->headers);
     lk_buffer_free(req->head);
     lk_buffer_free(req->body);
 
@@ -315,7 +315,7 @@ void lk_httprequest_free(LKHttpRequest *req) {
 }
 
 void lk_httprequest_add_header(LKHttpRequest *req, char *k, char *v) {
-    lk_stringmap_set(req->headers, k, lk_string_new(v));
+    lk_stringtable_set(req->headers, k, v);
 }
 
 void lk_httprequest_append_body(LKHttpRequest *req, char *bytes, int bytes_len) {
@@ -356,7 +356,7 @@ LKHttpResponse *lk_httpresponse_new() {
     resp->status = 0;
     resp->statustext = lk_string_new("");
     resp->version = lk_string_new("");
-    resp->headers = lk_stringmap_funcs_new(lk_string_voidp_free);
+    resp->headers = lk_stringtable_new();
     resp->head = lk_buffer_new(0);
     resp->body = lk_buffer_new(0);
     return resp;
@@ -365,7 +365,7 @@ LKHttpResponse *lk_httpresponse_new() {
 void lk_httpresponse_free(LKHttpResponse *resp) {
     lk_string_free(resp->statustext);
     lk_string_free(resp->version);
-    lk_stringmap_free(resp->headers);
+    lk_stringtable_free(resp->headers);
     lk_buffer_free(resp->head);
     lk_buffer_free(resp->body);
 
@@ -378,7 +378,7 @@ void lk_httpresponse_free(LKHttpResponse *resp) {
 }
 
 void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v) {
-    lk_stringmap_set(resp->headers, k, lk_string_new(v));
+    lk_stringtable_set(resp->headers, k, v);
 }
 
 // Finalize the http response by setting head buffer.

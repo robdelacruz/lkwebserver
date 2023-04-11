@@ -14,7 +14,7 @@ typedef struct {
     LKString *method;       // GET
     LKString *uri;          // /path/to/index.html
     LKString *version;      // HTTP/1.0
-    LKStringMap *headers;
+    LKStringTable *headers;
     LKBuffer *head;
     LKBuffer *body;
 } LKHttpRequest;
@@ -31,7 +31,7 @@ typedef struct {
     int status;             // 404
     LKString *statustext;    // File not found
     LKString *version;       // HTTP/1.0
-    LKStringMap *headers;
+    LKStringTable *headers;
     LKBuffer *head;
     LKBuffer *body;
 } LKHttpResponse;
@@ -98,7 +98,7 @@ typedef struct serverctx_s {
 typedef struct {
     LKString *homedir;
     LKString *cgidir;
-    LKStringMap *aliases;
+    LKStringTable *aliases;
 } LKHttpServerSettings;
 
 typedef struct {

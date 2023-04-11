@@ -1,6 +1,6 @@
 CFLAGS=-g -Wall
 LIBS=
-LKLIB_SRC=lklib.c lkstring.c lkstringmap.c lkbuffer.c lknet.c lkstringlist.c lkhttpserver.c lkhttprequestparser.c
+LKLIB_SRC=lklib.c lkstring.c lkstringtable.c lkbuffer.c lknet.c lkstringlist.c lkhttpserver.c lkhttprequestparser.c
 
 all: lkws tclient lktest
 

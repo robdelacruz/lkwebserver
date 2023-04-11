@@ -54,25 +54,23 @@ void lk_string_chop_end(LKString *lks, char *s);
 LKStringList *lk_string_split(LKString *lks, char *delim);
 
 
-/*** LKStringMap ***/
+/*** LKStringTable ***/
 typedef struct {
     LKString *k;
-    void *v;
-} LKStringMapItem;
+    LKString *v;
+} LKStringTableItem;
 
 typedef struct {
-    LKStringMapItem *items;
+    LKStringTableItem *items;
     size_t items_len;
     size_t items_size;
-    void (*freev_func)(void*); // function ptr to free v
-} LKStringMap;
+} LKStringTable;
 
-LKStringMap *lk_stringmap_new();
-LKStringMap *lk_stringmap_funcs_new(void (*freefunc)(void*));
-void lk_stringmap_free(LKStringMap *sm);
-void lk_stringmap_set(LKStringMap *sm, char *ks, void *v);
-void *lk_stringmap_get(LKStringMap *sm, char *ks);
-void lk_stringmap_remove(LKStringMap *sm, char *ks);
+LKStringTable *lk_stringtable_new();
+void lk_stringtable_free(LKStringTable *sm);
+void lk_stringtable_set(LKStringTable *sm, char *ks, char *v);
+char *lk_stringtable_get(LKStringTable *sm, char *ks);
+void lk_stringtable_remove(LKStringTable *sm, char *ks);
 
 
 /*** LKBuffer - Dynamic bytes buffer ***/
