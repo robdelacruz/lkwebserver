@@ -1,10 +1,25 @@
 #ifndef LKLIB_H
 #define LKLIB_H
 
+// Predefined buffer sizes.
+// Sample use: char buf[LK_BUFSIZE_SMALL]
+#define LK_BUFSIZE_SMALL 512
+#define LK_BUFSIZE_MEDIUM 1024
+#define LK_BUFSIZE_LARGE 2048
+#define LK_BUFSIZE_XL 4096
+#define LK_BUFSIZE_XXL 8192
+
 void lk_print_err(char *s);
 void lk_exit_err(char *s);
 char *lk_vasprintf(char *fmt, va_list args);
 int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err);
+
+// Return localtime in server format: 11/Mar/2023 14:05:46
+// Usage:
+// char timestr[TIME_STRING_SIZE];
+// get_localtime_string(timestr, sizeof(timestr))
+#define TIME_STRING_SIZE 25
+void get_localtime_string(char *time_str, size_t time_str_len);
 
 /*** LKString ***/
 typedef struct {

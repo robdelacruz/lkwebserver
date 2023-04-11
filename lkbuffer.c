@@ -8,11 +8,9 @@
 #include <assert.h>
 #include "lklib.h"
 
-#define LK_BUFFER_BUF_SIZE 1024
-
 LKBuffer *lk_buffer_new(size_t bytes_size) {
     if (bytes_size == 0) {
-        bytes_size = 10; //$$ specify a default initial size
+        bytes_size = LK_BUFSIZE_SMALL;
     }
 
     LKBuffer *buf = malloc(sizeof(LKBuffer));
@@ -57,12 +55,10 @@ int lk_buffer_append_sz(LKBuffer *buf, char *s) {
     return lk_buffer_append(buf, s, strlen(s));
 }
 
-// Append to buf using asprintf().
-// Can handle all string lengths without truncating, but less
-// efficient as it allocs/deallocs memory.
 void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...) {
-    char sbuf[LK_BUFFER_BUF_SIZE];
+    char sbuf[LK_BUFSIZE_MEDIUM];
 
+    // Try to use static buffer first, to avoid allocation.
     va_list args;
     va_start(args, fmt);
     int z = vsnprintf(sbuf, sizeof(sbuf), fmt, args);

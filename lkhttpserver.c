@@ -8,7 +8,6 @@
 #include <assert.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include <time.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -43,9 +42,9 @@ int read_and_parse_line(LKHttpServerContext *ctx);
 int read_and_parse_bytes(LKHttpServerContext *ctx);
 void process_request(LKHttpServer *server, LKHttpServerContext *ctx);
 void process_response(LKHttpServer *server, LKHttpServerContext *ctx);
+void get_localtime_string(char *time_str, size_t time_str_len);
 
 void read_responsefile(LKHttpServer *server, LKHttpServerContext *ctx);
-
 void serve_files(LKHttpServer *server, LKHttpServerContext *ctx);
 int open_uri_file(char *home_dir, char *uri);
 int read_uri_file(char *home_dir, char *uri, LKBuffer *buf);
@@ -269,12 +268,12 @@ void read_request_from_client(LKHttpServer *server, LKHttpServerContext *ctx) {
     while (1) {
         if (!ctx->reqparser->head_complete) {
             int z = read_and_parse_line(ctx);
-            if (z != 0) {
+            if (z <= 0) {
                 break;
             }
         } else {
             int z = read_and_parse_bytes(ctx);
-            if (z != 0) {
+            if (z <= 0) {
                 break;
             }
         }
@@ -291,28 +290,28 @@ void read_request_from_client(LKHttpServer *server, LKHttpServerContext *ctx) {
 }
 
 // Read and parse one request line from client socket.
-// Return 0 if line was read, 1 if no data, < 0 for socket error.
+// Return number of bytes read or -1 for socket error.
 int read_and_parse_line(LKHttpServerContext *ctx) {
-    char buf[1000];
+    char buf[LK_BUFSIZE_MEDIUM];
     size_t nread;
     int z = lk_socketreader_readline(ctx->sr, buf, sizeof buf, &nread);
     if (z == -1) {
         lk_print_err("lksocketreader_readline()");
         return z;
     }
-    if (nread == 0) {
-        return 1;
-    }
     assert(buf[nread] == '\0');
 
+    if (nread == 0) {
+        return 0;
+    }
     lk_httprequestparser_parse_line(ctx->reqparser, buf);
-    return 0;
+    return nread;
 }
 
 // Read and parse the next sequence of bytes from client socket.
-// Return 0 if bytes were read, 1 if no data, < 0 for socket error.
+// Return number of bytes read or -1 for socket error.
 int read_and_parse_bytes(LKHttpServerContext *ctx) {
-    char buf[2048];
+    char buf[LK_BUFSIZE_LARGE];
     size_t nread;
     int z = lk_socketreader_readbytes(ctx->sr, buf, sizeof buf, &nread);
     if (z == -1) {
@@ -320,26 +319,10 @@ int read_and_parse_bytes(LKHttpServerContext *ctx) {
         return z;
     }
     if (nread == 0) {
-        return 1;
+        return 0;
     }
-
     lk_httprequestparser_parse_bytes(ctx->reqparser, buf, nread);
-    return 0;
-}
-
-#define TIME_STRING_SIZE 50
-void get_localtime_string(char *time_str, size_t time_str_len) {
-    time_t t = time(NULL);
-    struct tm tmtime; 
-    void *pz = localtime_r(&t, &tmtime);
-    if (pz != NULL) {
-        int z = strftime(time_str, time_str_len, "%d/%b/%Y %H:%M:%S", &tmtime);
-        if (z == 0) {
-            sprintf(time_str, "???");
-        }
-    } else {
-        sprintf(time_str, "???");
-    }
+    return nread;
 }
 
 void process_request(LKHttpServer *server, LKHttpServerContext *ctx) {
@@ -379,7 +362,7 @@ void process_response(LKHttpServer *server, LKHttpServerContext *ctx) {
 }
 
 void read_responsefile(LKHttpServer *server, LKHttpServerContext *ctx) {
-    char buf[2048];
+    char buf[LK_BUFSIZE_LARGE];
     size_t nread;
 
     while (1) {

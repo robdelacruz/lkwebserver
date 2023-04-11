@@ -72,9 +72,9 @@ void lkstring_test() {
     assert(!lk_string_sz_equal(lks, "prompt: a: 1, b:2, c:3"));
     lk_string_free(lks);
 
-    // Test strings larger than LK_STRING_BUF_SIZE
+    // Test very large strings.
     lks = lk_string_new("");
-    char sbuf[2000];
+    char sbuf[LK_BUFSIZE_XXL];
     memset(sbuf, 'a', sizeof(sbuf));
     sbuf[sizeof(sbuf)-1] = '\0';
     lk_string_assign(lks, sbuf);
@@ -356,9 +356,9 @@ void lkbuffer_test() {
     assert(!strncmp(buf->bytes+5+8, "def 456", 7));
     lk_buffer_free(buf);
 
-    // Test buffer append larger than LK_BUFFER_BUF_SIZE
+    // Test buffer append on very large strings.
     buf = lk_buffer_new(0);
-    char sbuf[2000];
+    char sbuf[LK_BUFSIZE_XXL];
     memset(sbuf, 'a', sizeof(sbuf));
     lk_buffer_append(buf, sbuf, sizeof(sbuf));
 

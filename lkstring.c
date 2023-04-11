@@ -9,9 +9,6 @@
 #include <ctype.h>
 #include "lklib.h"
 
-#define LK_STRING_BUF_SIZE 1024
-#define N_GROW_STRING 20
-
 // Zero out entire size
 void zero_s(LKString *lks) {
     memset(lks->s, 0, lks->s_size+1);
@@ -70,8 +67,9 @@ void lk_string_assign(LKString *lks, char *s) {
 }
 
 void lk_string_assign_sprintf(LKString *lks, char *fmt, ...) {
-    char sbuf[LK_STRING_BUF_SIZE];
+    char sbuf[LK_BUFSIZE_MEDIUM];
 
+    // Try to use static buffer first, to avoid allocation.
     va_list args;
     va_start(args, fmt);
     int z = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
@@ -98,8 +96,9 @@ void lk_string_assign_sprintf(LKString *lks, char *fmt, ...) {
 
 //$$ Duplicate code from lk_string_sprintf().
 void lk_string_append_sprintf(LKString *lks, char *fmt, ...) {
-    char sbuf[LK_STRING_BUF_SIZE];
+    char sbuf[LK_BUFSIZE_MEDIUM];
 
+    // Try to use static buffer first, to avoid allocation.
     va_list args;
     va_start(args, fmt);
     int z = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
@@ -138,7 +137,8 @@ void lk_string_append(LKString *lks, char *s) {
 
 void lk_string_append_char(LKString *lks, char c) {
     if (lks->s_len + 1 > lks->s_size) {
-        lks->s_size = lks->s_len + N_GROW_STRING;
+        // Grow string by ^2
+        lks->s_size = lks->s_len + ((lks->s_len+1) * 2);
         lks->s = realloc(lks->s, lks->s_size+1);
         zero_unused_s(lks);
     }

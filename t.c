@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
 
     int z;
     char *filename = "spec.txt";
-    char buf[100];
+    char buf[LK_BUFSIZE_SMALL];
     int fd1 = open(filename, 0);
     z = read(fd1, buf, 10);
 

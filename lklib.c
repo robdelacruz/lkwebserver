@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <time.h>
 #include "lklib.h"
 
 // forward declarations
@@ -104,6 +105,20 @@ void close_pipes(int pair1[2], int pair2[2], int pair3[2]) {
     }
     errno = tmp_errno;
     return;
+}
+
+void get_localtime_string(char *time_str, size_t time_str_len) {
+    time_t t = time(NULL);
+    struct tm tmtime; 
+    void *pz = localtime_r(&t, &tmtime);
+    if (pz != NULL) {
+        int z = strftime(time_str, time_str_len, "%d/%b/%Y %H:%M:%S", &tmtime);
+        if (z == 0) {
+            sprintf(time_str, "???");
+        }
+    } else {
+        sprintf(time_str, "???");
+    }
 }
 
 
