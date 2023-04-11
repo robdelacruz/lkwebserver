@@ -186,28 +186,22 @@ int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size
         // If no buffer chars available, read from socket.
         if (sr->next_read_pos >= sr->buf_len) {
             memset(sr->buf, '*', sr->buf_size); // initialize for debugging purposes.
-            int z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT);
+            //int z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT);
+            size_t sock_nread = 0;
+            int z = lk_sock_recv(sr->sock, sr->buf, sr->buf_size, &sock_nread);
             // socket closed, no more data
-            if (z == 0) {
+            if (z == 0 && sock_nread == 0) {
                 sr->sockclosed = 1;
                 break;
             }
-            // interrupt occured during read, retry read.
-            if (z == -1 && errno == EINTR) {
-                continue;
-            }
-            // no data available at the moment, just return what we have.
-            if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                break;
-            }
             // any other error
-            if (z == -1) {
+            if (z == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
                 assert(nread <= dst_len-1);
                 dst[nread] = '\0';
                 *ret_nread = nread;
                 return z;
             }
-            sr->buf_len = z;
+            sr->buf_len = sock_nread;
             sr->next_read_pos = 0;
         }
 
@@ -256,7 +250,11 @@ int lk_socketreader_readbytes(LKSocketReader *sr, char *dst, size_t count, size_
     }
     size_t sock_nread = 0;
     int z = lk_sock_recv(sr->sock, dst, count-nread, &sock_nread);
-    if (z < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+    // socket closed, no more data
+    if (z == 0 && sock_nread == 0) {
+        sr->sockclosed = 1;
+    }
+    if (z == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
         *ret_nread = nread;
         return z;
     }

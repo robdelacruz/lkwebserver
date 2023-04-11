@@ -297,13 +297,11 @@ int read_and_parse_line(LKHttpServerContext *ctx) {
     int z = lk_socketreader_readline(ctx->sr, buf, sizeof buf, &nread);
     if (z == -1) {
         lk_print_err("lksocketreader_readline()");
+    }
+    if (nread == 0) {
         return z;
     }
     assert(buf[nread] == '\0');
-
-    if (nread == 0) {
-        return 0;
-    }
     lk_httprequestparser_parse_line(ctx->reqparser, buf);
     return nread;
 }
@@ -316,10 +314,9 @@ int read_and_parse_bytes(LKHttpServerContext *ctx) {
     int z = lk_socketreader_readbytes(ctx->sr, buf, sizeof buf, &nread);
     if (z == -1) {
         lk_print_err("lksocketreader_readbytes()");
-        return z;
     }
     if (nread == 0) {
-        return 0;
+        return z;
     }
     lk_httprequestparser_parse_bytes(ctx->reqparser, buf, nread);
     return nread;
