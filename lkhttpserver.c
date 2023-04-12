@@ -266,6 +266,8 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
 
 void read_request_from_client(LKHttpServer *server, LKHttpServerContext *ctx) {
     while (1) {
+        //$$ todo: Check if client is eof (ctx->sr->sockclosed)
+        // If client is EOF, set http request as complete and process it.
         if (!ctx->reqparser->head_complete) {
             int z = read_and_parse_line(ctx);
             if (z <= 0) {
@@ -391,6 +393,8 @@ void read_responsefile(LKHttpServer *server, LKHttpServerContext *ctx) {
     }
 }
 
+#define POSTTEST
+
 // Generate an http response to an http request.
 void serve_files(LKHttpServer *server, LKHttpServerContext *ctx) {
     int z;
@@ -409,16 +413,6 @@ void serve_files(LKHttpServer *server, LKHttpServerContext *ctx) {
        "<body><h1>Little Kitten webserver</h1>\n"
        "<p>Hello Little Kitten!</p>\n"
        "</body></html>\n";
-
-#if 0
-    static char *html_start =
-       "<!DOCTYPE html>\n"
-       "<html>\n"
-       "<head><title>Little Kitten Sample Response</title></head>\n"
-       "<body>\n";
-    static char *html_end =
-       "</body></html>\n";
-#endif
 
     LKHttpServerSettings *settings = server->settings;
     LKHttpRequest *req = ctx->req;
@@ -470,8 +464,16 @@ void serve_files(LKHttpServer *server, LKHttpServerContext *ctx) {
         }
         return;
     }
-#if 0
+#ifdef POSTTEST
     if (!strcmp(method, "POST")) {
+        static char *html_start =
+           "<!DOCTYPE html>\n"
+           "<html>\n"
+           "<head><title>Little Kitten Sample Response</title></head>\n"
+           "<body>\n";
+        static char *html_end =
+           "</body></html>\n";
+
         lk_httpresponse_add_header(resp, "Content-Type", "text/html");
         lk_buffer_append(resp->body, html_start, strlen(html_start));
         lk_buffer_append_sz(resp->body, "<pre>\n");

@@ -186,11 +186,9 @@ int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size
         // If no buffer chars available, read from socket.
         if (sr->next_read_pos >= sr->buf_len) {
             memset(sr->buf, '*', sr->buf_size); // initialize for debugging purposes.
-            //int z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT);
-            size_t sock_nread = 0;
-            int z = lk_sock_recv(sr->sock, sr->buf, sr->buf_size, &sock_nread);
+            int z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT);
             // socket closed, no more data
-            if (z == 0 && sock_nread == 0) {
+            if (z == 0) {
                 sr->sockclosed = 1;
                 break;
             }
@@ -201,7 +199,7 @@ int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size
                 *ret_nread = nread;
                 return z;
             }
-            sr->buf_len = sock_nread;
+            sr->buf_len = z;
             sr->next_read_pos = 0;
         }
 
@@ -249,20 +247,45 @@ int lk_socketreader_readbytes(LKSocketReader *sr, char *dst, size_t count, size_
         return 0;
     }
     size_t sock_nread = 0;
-    int z = lk_sock_recv(sr->sock, dst, count-nread, &sock_nread);
-    // socket closed, no more data
-    if (z == 0 && sock_nread == 0) {
-        sr->sockclosed = 1;
-    }
+    int z = lk_socketreader_recv(sr, dst, count-nread, &sock_nread);
     if (z == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
         *ret_nread = nread;
         return z;
     }
-    nread += sock_nread;
 
+    nread += sock_nread;
     *ret_nread = nread;
     return 0;
 }
+
+// Receive count bytes into buf nonblocking.
+// Returns 0 for success, -1 for error.
+// On return, ret_nread contains the number of bytes received.
+int lk_socketreader_recv(LKSocketReader *sr, char *buf, size_t count, size_t *ret_nread) {
+    size_t nread = 0;
+    while (nread < count) {
+        int z = recv(sr->sock, buf+nread, count-nread, MSG_DONTWAIT);
+        // socket closed, no more data
+        if (z == 0) {
+            sr->sockclosed = 1;
+            break;
+        }
+        // interrupt occured during read, retry read.
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        if (z == -1) {
+            // errno is set to EAGAIN/EWOULDBLOCK if socket is blocked
+            // errno is set to EPIPE if socket was shutdown
+            *ret_nread = nread;
+            return -1;
+        }
+        nread += z;
+    }
+    *ret_nread = nread;
+    return 0;
+}
+
 
 void debugprint_buf(char *buf, size_t buf_size) {
     printf("buf: ");

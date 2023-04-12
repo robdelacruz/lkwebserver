@@ -53,6 +53,9 @@ with basic html containing error message:
 <p>Error code: 501</p>
 <p>Message: Unsupported method ('POST').</p>
 
+curl post test:
+curl -X POST -H "Content-Type: application/json" -d '{"id": 123, "name": "rob"}' http://localhost:5000
+
 nginx:
 Server: nginx/1.18.0
 
