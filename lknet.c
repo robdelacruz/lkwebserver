@@ -422,6 +422,9 @@ void lk_httpresponse_finalize(LKHttpResponse *resp) {
     }
     lk_buffer_append_sprintf(resp->head, "%s %d %s\n", resp->version->s, resp->status, resp->statustext->s);
     lk_buffer_append_sprintf(resp->head, "Content-Length: %ld\n", resp->body->bytes_len);
+    for (int i=0; i < resp->headers->items_len; i++) {
+        lk_buffer_append_sprintf(resp->head, "%s: %s\n", resp->headers->items[i].k->s, resp->headers->items[i].v->s);
+    }
     lk_buffer_append(resp->head, "\r\n", 2);
 }
 
