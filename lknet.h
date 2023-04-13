@@ -77,6 +77,19 @@ void lk_httprequestparser_reset(LKHttpRequestParser *parser);
 void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
 void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, size_t buf_len);
 
+/*** LKHttpCGIParser ***/
+typedef struct {
+    int head_complete;              // flag indicating header lines complete
+    unsigned int status;            // value of Status header
+    LKHttpResponse *resp;           // httpresponse to output to while parsing
+} LKHttpCGIParser;
+
+LKHttpCGIParser *lk_httpcgiparser_new(LKHttpResponse *resp);
+void lk_httpcgiparser_free(LKHttpCGIParser *parser);
+void lk_httpcgiparser_reset(LKHttpCGIParser *parser);
+void lk_httpcgiparser_parse_line(LKHttpCGIParser *parser, char *line);
+void lk_httpcgiparser_parse_bytes(LKHttpCGIParser *parser, char *buf, size_t buf_len);
+
 
 /*** LKHttpServer ***/
 
@@ -89,9 +102,11 @@ typedef struct serverctx_s {
     struct sockaddr_in client_sa;     // client address
     LKString *client_ipaddr;          // client ip address string
     LKSocketReader *sr;               // input buffer for reading lines
-    LKHttpRequestParser *reqparser;   // parser for httprequest
     LKHttpRequest *req;               // http request so far
     LKHttpResponse *resp;             // http response to be sent
+    LKHttpRequestParser *reqparser;   // parser for httprequest
+    LKHttpCGIParser *cgiparser;       // parser for cgi stream
+    LKBuffer *cgibuf;                 // cgi stream
 
     struct serverctx_s *next;           // link to next ctx
 } LKHttpServerContext;

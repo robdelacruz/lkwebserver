@@ -12,6 +12,9 @@ my $endhtml = <<"EOT";
 </body></html>
 EOT
 
+print "Content-Type: text/html\n";
+print "Status: 200\n";
+print "\n";
 print $starthtml;
 print "<p>Hello from perl script.</p>\n";
 print "<p>Bye from perl script.</p>\n";

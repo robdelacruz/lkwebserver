@@ -11,7 +11,7 @@
 
 void parse_line(LKHttpRequestParser *parser, char *line);
 void parse_request_line(char *line, LKHttpRequest *req);
-void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req);
+static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req);
 int is_empty_line(char *s);
 int ends_with_newline(char *s);
 
@@ -155,7 +155,7 @@ void parse_request_line(char *line, LKHttpRequest *req) {
 }
 
 // Parse header line in the format Ex. User-Agent: browser
-void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req) {
+static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req) {
     char *saveptr;
     char *delim = ":";
 

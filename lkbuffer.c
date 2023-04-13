@@ -83,3 +83,29 @@ void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...) {
     lk_buffer_append(buf, sbuf, z);
 }
 
+// Read CR-terminated line from buffer starting from buf->bytes_cur position.
+// buf->bytes_cur is updated to point to the first char of next line.
+// If dst doesn't have enough chars for line, partial line is copied.
+// Returns number of bytes read.
+size_t lk_buffer_readline(LKBuffer *buf, char *dst, size_t dst_len) {
+    assert(dst_len > 2); // Reserve space for \n and \0.
+
+    size_t nread = 0;
+    while (nread < dst_len-1) { // leave space for null terminator
+        if (buf->bytes_cur >= buf->bytes_len) {
+            break;
+        }
+        dst[nread] = buf->bytes[buf->bytes_cur];
+        nread++;
+        buf->bytes_cur++;
+
+        if (dst[nread-1] == '\n') {
+            break;
+        }
+    }
+
+    assert(nread <= dst_len-1);
+    dst[nread] = '\0';
+    return nread;
+}
+
