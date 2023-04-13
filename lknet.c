@@ -246,13 +246,17 @@ int lk_socketreader_readbytes(LKSocketReader *sr, char *dst, size_t count, size_
         *ret_nread = nread;
         return 0;
     }
+
+    if (sr->sockclosed) {
+        *ret_nread = nread;
+        return 0;
+    }
     size_t sock_nread = 0;
     int z = lk_socketreader_recv(sr, dst, count-nread, &sock_nread);
     if (z == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
         *ret_nread = nread;
         return z;
     }
-
     nread += sock_nread;
     *ret_nread = nread;
     return 0;

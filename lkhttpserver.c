@@ -266,18 +266,16 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
 
 void read_request_from_client(LKHttpServer *server, LKHttpServerContext *ctx) {
     while (1) {
-        //$$ todo: Check if client is eof (ctx->sr->sockclosed)
-        // If client is EOF, set http request as complete and process it.
+        int z = 0;
         if (!ctx->reqparser->head_complete) {
-            int z = read_and_parse_line(ctx);
-            if (z <= 0) {
-                break;
-            }
+            z = read_and_parse_line(ctx);
         } else {
-            int z = read_and_parse_bytes(ctx);
-            if (z <= 0) {
-                break;
-            }
+            z = read_and_parse_bytes(ctx);
+        }
+        // No more data coming in.
+        if (ctx->sr->sockclosed) {
+            printf("read_and_parse_line() sockclosed\n");
+            ctx->reqparser->body_complete = 1;
         }
 
         if (ctx->reqparser->body_complete) {
@@ -287,6 +285,11 @@ void read_request_from_client(LKHttpServer *server, LKHttpServerContext *ctx) {
                 lk_print_err("read_request_from_client(): shutdown()");
             }
             process_request(server, ctx);
+            break;
+        }
+
+        if (z <= 0) {
+            break;
         }
     }
 }
@@ -300,11 +303,13 @@ int read_and_parse_line(LKHttpServerContext *ctx) {
     if (z == -1) {
         lk_print_err("lksocketreader_readline()");
     }
-    if (nread == 0) {
+    if (nread > 0) {
+        assert(buf[nread] == '\0');
+        lk_httprequestparser_parse_line(ctx->reqparser, buf);
+    }
+    if (z == -1) {
         return z;
     }
-    assert(buf[nread] == '\0');
-    lk_httprequestparser_parse_line(ctx->reqparser, buf);
     return nread;
 }
 
@@ -317,10 +322,12 @@ int read_and_parse_bytes(LKHttpServerContext *ctx) {
     if (z == -1) {
         lk_print_err("lksocketreader_readbytes()");
     }
-    if (nread == 0) {
+    if (nread > 0) {
+        lk_httprequestparser_parse_bytes(ctx->reqparser, buf, nread);
+    }
+    if (z == -1) {
         return z;
     }
-    lk_httprequestparser_parse_bytes(ctx->reqparser, buf, nread);
     return nread;
 }
 
@@ -642,7 +649,7 @@ void terminate_client_session(LKHttpServer *server, int clientfd) {
 
     int z = shutdown(clientfd, SHUT_RDWR);
     if (z == -1) {
-        lk_print_err("shutdown()");
+        lk_print_err("terminate_client_session(): shutdown()");
     }
     z = close(clientfd);
     if (z == -1) {
