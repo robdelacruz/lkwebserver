@@ -121,4 +121,20 @@ void get_localtime_string(char *time_str, size_t time_str_len) {
     }
 }
 
+// Return matching item in lookup table given testk.
+// tbl is a null-terminated array of char* key-value pairs
+// Ex. tbl = {"key1", "val1", "key2", "val2", "key3", "val3", NULL};
+// where key1/val1, key2/val2, key3/val3 are the key-value pairs.
+void **lk_lookup(void **tbl, char *testk) {
+    void **p = tbl;
+    while (*p != NULL) {
+        char *k = *p;
+        if (k == NULL) break;
+        if (!strcmp(k, testk)) {
+            return *(p+1); // val
+        }
+        p += 2; // next key
+    }
+    return NULL;
+}
 

@@ -1,5 +1,5 @@
-#ifndef NETFUNCS_H
-#define NETFUNCS_H
+#ifndef LKNET_H
+#define LKNET_H
 
 #include <sys/types.h>
 #include <sys/socket.h>

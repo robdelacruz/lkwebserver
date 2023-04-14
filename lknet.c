@@ -455,6 +455,7 @@ void lk_httpresponse_debugprint(LKHttpResponse *resp) {
 }
 
 // Open and read entire file contents into buf.
+// Return number of bytes read or -1 for error.
 ssize_t lk_readfile(char *filepath, LKBuffer *buf) {
     int fd = open(filepath, O_RDONLY);
     if (fd == -1) {
@@ -473,6 +474,7 @@ ssize_t lk_readfile(char *filepath, LKBuffer *buf) {
 }
 
 // Read entire file descriptor contents into buf.
+// Return number of bytes read or -1 for error.
 #define TMPBUF_SIZE 512
 ssize_t lk_readfd(int fd, LKBuffer *buf) {
     char tmpbuf[TMPBUF_SIZE];

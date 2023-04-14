@@ -15,81 +15,30 @@
 
 #include "lklib.h"
 #include "lknet.h"
+#include "lktables.h"
 
-struct procfile {
-    int in_fd;
-    int out_fd;
-    int err_fd;
-};
-
-void *runcgi2(void *parg);
-
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        printf("Usage: %s <cgifile>\n", argv[0]);
-        exit(1);
+// tbl is a null-terminated array of char* key-value pairs
+// Ex. tbl: {"key1", "val1", "key2", "val2", "key3", "val3", NULL}
+// where key1/val1, key2/val2, key3/val3 are the key-value pairs.
+// Returns matching val to testk, or NULL if no match.
+void *lookup(void **tbl, char *testk) {
+    void **p = tbl;
+    while (*p != NULL) {
+        char *k = *p;
+        if (k == NULL) break;
+        if (!strcmp(k, testk)) {
+            return *(p+1); // val
+        }
+        p += 2; // next key
     }
-    char *cgifile = argv[1];
-    if (!lk_file_exists(cgifile)) {
-        printf("%s doesn't exist.\n", cgifile);
-        exit(1);
-    }
-
-    runcgi2(cgifile);
-    runcgi2(cgifile);
-    runcgi2(cgifile);
-
-    int z;
-    char *filename = "spec.txt";
-    char buf[LK_BUFSIZE_SMALL];
-    int fd1 = open(filename, 0);
-    z = read(fd1, buf, 10);
-
-    int fd2 = open(filename, 0);
-    z = read(fd2, buf, 25);
-
-    z = read(fd1, buf, 7);
-
-    int fd3 = open(filename, 0);
-    z = read(fd3, buf, 5);
-
-    printf("main() fd1: %d fd2: %d fd3: %d\n", fd1, fd2, fd3);
-
+    return NULL;
 }
 
-void *runcgi2(void *parg) {
-    printf("*** Start runcgi() function...\n");
-    char *cgifile = parg;
+int main(int argc, char *argv[]) {
+    char *v1 = lookup(mimetypes_tbl, "123");
+    char *v2 = lookup(mimetypes_tbl, "bz");
+    char *v3 = lookup(mimetypes_tbl, "htm");
 
-    int in, out, err;
-    int z = lk_popen3(cgifile, &in, &out, &err);
-    if (z == -1) {
-        perror("popen3()");
-        exit(1);
-    }
-
-    printf("runcgi() in: %d out: %d err: %d\n", in, out, err);
-
-    printf("buf_out:\n");
-    LKBuffer *buf_out = lk_buffer_new(0);
-    lk_readfd(out, buf_out);
-    for (int i=0; i < buf_out->bytes_len; i++) {
-//        putchar(buf_out->bytes[i]);
-    }
-    lk_buffer_free(buf_out);
-
-    printf("buf_err:\n");
-    LKBuffer *buf_err = lk_buffer_new(0);
-    lk_readfd(err, buf_err);
-    for (int i=0; i < buf_err->bytes_len; i++) {
-//        putchar(buf_err->bytes[i]);
-    }
-    lk_buffer_free(buf_err);
-
-//    close(in);
-//    close(out);
-//    close(err);
-    printf("*** End runcgi() function\n");
-    return NULL;
+    printf("v1: '%s' v2: '%s' v3: '%s'\n", v1, v2, v3);
 }
 

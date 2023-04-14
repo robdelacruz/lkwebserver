@@ -21,6 +21,12 @@ int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err);
 #define TIME_STRING_SIZE 25
 void get_localtime_string(char *time_str, size_t time_str_len);
 
+// Return matching item in lookup table given testk.
+// tbl is a null-terminated array of char* key-value pairs
+// Ex. tbl = {"key1", "val1", "key2", "val2", "key3", "val3", NULL};
+// where key1/val1, key2/val2, key3/val3 are the key-value pairs.
+void **lk_lookup(void **tbl, char *testk);
+
 /*** LKString ***/
 typedef struct {
     char *s;
