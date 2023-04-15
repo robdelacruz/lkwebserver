@@ -12,7 +12,10 @@
 /*** LKHttpRequest - HTTP Request struct ***/
 typedef struct {
     LKString *method;       // GET
-    LKString *uri;          // /path/to/index.html
+    LKString *uri;          // "/path/to/index.html?p=1&start=5"
+    LKString *path;         // "/path/to/index.html"
+    LKString *filename;     // "index.html"
+    LKString *querystring;  // "p=1&start=5"
     LKString *version;      // HTTP/1.0
     LKStringTable *headers;
     LKBuffer *head;
@@ -101,6 +104,7 @@ typedef struct serverctx_s {
 
     struct sockaddr_in client_sa;     // client address
     LKString *client_ipaddr;          // client ip address string
+    unsigned short client_port;       // client port number
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequest *req;               // http request so far
     LKHttpResponse *resp;             // http response to be sent
@@ -113,6 +117,7 @@ typedef struct serverctx_s {
 
 typedef struct {
     LKString *homedir;
+    LKString *homedir_abspath;
     LKString *cgidir;
     LKStringTable *aliases;
 } LKHttpServerSettings;
@@ -143,6 +148,7 @@ int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
 void lk_set_sock_timeout(int sock, int nsecs, int ms);
 void lk_set_sock_nonblocking(int sock);
 LKString *lk_get_ipaddr_string(struct sockaddr *sa);
+unsigned short lk_get_sockaddr_port(struct sockaddr *sa);
 
 
 /*** Other helper functions ***/

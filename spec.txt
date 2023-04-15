@@ -76,4 +76,26 @@ https://www.tutorialspoint.com/perl-cgi-environment-variables
 https://www.oreilly.com/openbook/cgi/ch02_02.html
 http://www.cgi101.com/book/ch3/text.html
 
+SERVER_NAME = robdelacruz.xyz   // hostname())
+SERVER_SOFTWARE = nginx/1.18.0
+DOCUMENT_ROOT = /var/www/robdelacruz.xyz  // realpath()
+SERVER_PROTOCOL = HTTP/1.1
+SERVER_PORT = 443 // request header Host: robdelacruz.xyz:5000
+
+HTTP_USER_AGENT = Chrome/108.0.0.0 // request header User-Agent
+HTTP_HOST = robdelacruz.xyz // request header Host: robdelacruz.xyz:5000
+REQUEST_METHOD = GET
+SCRIPT_FILENAME = /var/www/robdelacruz.xyz/cgi-bin/rob.pl  // DOCUMENT_ROOT + uri
+SCRIPT_NAME = /cgi-bin/rob.pl // uri
+REQUEST_URI = /cgi-bin/rob.pl?abc=123 // uri
+QUERY_STRING = abc=123&def=45 // uri
+CONTENT_TYPE = ??? (mime type of query data such as "text/html")
+CONTENT_LENGTH = ??? (length of data in bytes passed to cgi program through std input)
+
+REMOTE_ADDR = 180.190.63.221 (visitor's ip addr)
+REMOTE_PORT = 15046
+HTTP_COOKIE
+HTTP_REFERER
+HTTPS ("on" if https)
+PATH
 

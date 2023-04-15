@@ -16,7 +16,12 @@ print "Content-Type: text/html\n";
 print "Status: 200\n";
 print "\n";
 print $starthtml;
-print "<p>Hello from perl script.</p>\n";
-print "<p>Bye from perl script.</p>\n";
+
+print "<ul>\n";
+foreach my $k (sort(keys(%ENV))) {
+    print "<li>$k = $ENV{$k}</li>\n";
+}
+print "</ul>\n";
+
 print $endhtml;
 

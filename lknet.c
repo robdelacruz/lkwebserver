@@ -45,6 +45,17 @@ void *sockaddr_sin_addr(struct sockaddr *sa) {
         return &(p->sin6_addr);
     }
 }
+// Return sin_port or sin6_port depending on address family.
+unsigned short lk_get_sockaddr_port(struct sockaddr *sa) {
+    // addr->ai_addr is either struct sockaddr_in* or sockaddr_in6* depending on ai_family
+    if (sa->sa_family == AF_INET) {
+        struct sockaddr_in *p = (struct sockaddr_in*) sa;
+        return ntohs(p->sin_port);
+    } else {
+        struct sockaddr_in6 *p = (struct sockaddr_in6*) sa;
+        return ntohs(p->sin6_port);
+    }
+}
 
 // Return human readable IP address from sockaddr
 LKString *lk_get_ipaddr_string(struct sockaddr *sa) {
@@ -315,6 +326,9 @@ LKHttpRequest *lk_httprequest_new() {
     LKHttpRequest *req = malloc(sizeof(LKHttpRequest));
     req->method = lk_string_new("");
     req->uri = lk_string_new("");
+    req->path = lk_string_new("");
+    req->filename = lk_string_new("");
+    req->querystring = lk_string_new("");
     req->version = lk_string_new("");
     req->headers = lk_stringtable_new();
     req->head = lk_buffer_new(0);
@@ -325,6 +339,9 @@ LKHttpRequest *lk_httprequest_new() {
 void lk_httprequest_free(LKHttpRequest *req) {
     lk_string_free(req->method);
     lk_string_free(req->uri);
+    lk_string_free(req->path);
+    lk_string_free(req->filename);
+    lk_string_free(req->querystring);
     lk_string_free(req->version);
     lk_stringtable_free(req->headers);
     lk_buffer_free(req->head);
@@ -332,6 +349,9 @@ void lk_httprequest_free(LKHttpRequest *req) {
 
     req->method = NULL;
     req->uri = NULL;
+    req->path = NULL;
+    req->filename = NULL;
+    req->querystring = NULL;
     req->version = NULL;
     req->headers = NULL;
     req->head = NULL;

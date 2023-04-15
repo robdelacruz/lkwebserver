@@ -12,6 +12,7 @@
 void parse_line(LKHttpRequestParser *parser, char *line);
 void parse_request_line(char *line, LKHttpRequest *req);
 static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req);
+void parse_uri(LKString *lks_uri, LKString *lks_path, LKString *lks_filename, LKString *lks_qs);
 int is_empty_line(char *s);
 int ends_with_newline(char *s);
 
@@ -151,8 +152,39 @@ void parse_request_line(char *line, LKHttpRequest *req) {
     lk_string_assign(req->uri, uri);
     lk_string_assign(req->version, version);
 
+    parse_uri(req->uri, req->path, req->filename, req->querystring);
+
     free(linetmp);
 }
+
+// Parse uri into its components.
+// Given: lks_uri   = "/path/blog/file1.html?a=1&b=2"
+// lks_path         = "/path/blog/file1.html"
+// lks_filename     = "file1.html"
+// lks_qs           = "a=1&b=2"
+void parse_uri(LKString *lks_uri, LKString *lks_path, LKString *lks_filename, LKString *lks_qs) { 
+    // Get path and querystring
+    // "/path/blog/file1.html?a=1&b=2" ==> "/path/blog/file1.html" and "a=1&b=2"
+    LKStringList *uri_ss = lk_string_split(lks_uri, "?");
+    lk_string_assign(lks_path, uri_ss->items[0]->s);
+    if (uri_ss->items_len > 1) {
+        lk_string_assign(lks_qs, uri_ss->items[1]->s);
+    } else {
+        lk_string_assign(lks_qs, "");
+    }
+
+    // Remove any trailing slash from uri. "/path/blog/" ==> "/path/blog"
+    lk_string_chop_end(lks_path, "/");
+
+    // Extract filename from path. "/path/blog/file1.html" ==> "file1.html"
+    LKStringList *path_ss = lk_string_split(lks_path, "/");
+    assert(path_ss->items_len > 0);
+    lk_string_assign(lks_filename, path_ss->items[path_ss->items_len-1]->s);
+
+    lk_stringlist_free(uri_ss);
+    lk_stringlist_free(path_ss);
+}
+
 
 // Parse header line in the format Ex. User-Agent: browser
 static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req) {
