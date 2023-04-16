@@ -118,6 +118,8 @@ typedef struct serverctx_s {
 typedef struct {
     LKString *homedir;
     LKString *homedir_abspath;
+    LKString *host;
+    LKString *port;
     LKString *cgidir;
     LKStringTable *aliases;
 } LKHttpServerSettings;
@@ -132,6 +134,8 @@ typedef struct {
 
 typedef enum {
     LKHTTPSERVEROPT_HOMEDIR,
+    LKHTTPSERVEROPT_PORT,
+    LKHTTPSERVEROPT_HOST,
     LKHTTPSERVEROPT_CGIDIR,
     LKHTTPSERVEROPT_ALIAS
 } LKHttpServerOpt;
@@ -139,7 +143,7 @@ typedef enum {
 LKHttpServer *lk_httpserver_new();
 void lk_httpserver_free(LKHttpServer *server);
 void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...);
-int lk_httpserver_serve(LKHttpServer *server, int listen_sock);
+int lk_httpserver_serve(LKHttpServer *server);
 
 
 /*** socket helper functions ***/

@@ -1,9 +1,10 @@
 ## Little Kitten Web Server
 
-A little web server written in C.
+A little web server written in C for Linux.
 
+- No external library dependencies
 - Single threaded using I/O multiplexing (select)
-- No external dependencies
+- Supports CGI interface
 - lklib and lknet code available to create your own http server or client
 - Free to use and modify (MIT License)
 
@@ -13,17 +14,25 @@ To compile:
 
     $ make lkws
 
-To run:
+Usage:
 
-    $ ./lkws <home directory>
+    lkws [homedir] [port] [host] [-a <alias1>=<path>]...
+    homedir = absolute or relative path to a home directory
+              defaults to current working directory if not specified
+    port    = port number to bind to server
+              defaults to 8000
+    host    = IP address to bind to server
+              defaults to localhost
 
-Compiles and runs only on Linux (for now)
+    Examples:
+    lkws ./testsite/ 8080 -a latest=latest.html -a about=about.html
+    lkws /var/www/testsite/ 8080 127.0.0.1 -a latest=folder/latest.html
+    lkws /var/www/testsite/ --cgidir=cgifolder
+
+Compiles and runs only on Linux (sorry, no Windows version... yet)
 
 ## Todo
 
-- better name for 'lkws'?
-- add support for cgi via cgi-bin directory
-- add port parameter
 - add logging
 - add tests for lknet
 - add perf tests for many simultaneous clients

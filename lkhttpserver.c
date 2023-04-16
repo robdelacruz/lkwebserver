@@ -106,14 +106,24 @@ void finalize_settings(LKHttpServerSettings *settings) {
     }
     lk_string_assign(settings->homedir_abspath, homedir_abspath);
 
-    // If cgi dir not specified, default to cgi-bin.
+    // cgidir defaults to cgi-bin if not specified.
     if (settings->cgidir->s_len == 0) {
         lk_string_assign(settings->cgidir, "/cgi-bin/");
+    }
+    // host defaults to localhost if not specified.
+    if (settings->host->s_len == 0) {
+        lk_string_assign(settings->host, "localhost");
+    }
+    // port defaults to 8000 if not specified.
+    if (settings->port->s_len == 0) {
+        lk_string_assign(settings->port, "8000");
     }
 }
 
 void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
     char *homedir;
+    char *port;
+    char *host;
     char *cgidir;
     char *alias_k, *alias_v;
     LKHttpServerSettings *settings = server->settings;
@@ -126,6 +136,14 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
         homedir = va_arg(args, char*);
         lk_string_assign(settings->homedir, homedir);
         lk_string_chop_end(settings->homedir, "/");
+        break;
+    case LKHTTPSERVEROPT_PORT:
+        port = va_arg(args, char*);
+        lk_string_assign(settings->port, port);
+        break;
+    case LKHTTPSERVEROPT_HOST:
+        host = va_arg(args, char*);
+        lk_string_assign(settings->host, host);
         break;
     case LKHTTPSERVEROPT_CGIDIR:
         cgidir = va_arg(args, char*);
@@ -173,23 +191,61 @@ void FD_CLR_WRITE(int fd, LKHttpServer *server) {
     FD_CLR(fd, &server->writefds);
 }
 
-int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
-    finalize_settings(server->settings);
+int lk_httpserver_serve(LKHttpServer *server) {
+    int z;
+    LKHttpServerSettings *settings = server->settings;
+    finalize_settings(settings);
 
-    clearenv();
-    set_cgi_env1(server);
+    // Get this server's address.
+    struct addrinfo hints, *servaddr;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    z = getaddrinfo(settings->host->s, settings->port->s, &hints, &servaddr);
+    if (z != 0) {
+        lk_print_err("getaddrinfo()");
+        return z;
+    }
 
-    printf("home_dir: '%s', cgi_dir: '%s'\n", server->settings->homedir->s, server->settings->cgidir->s);
+    int s0 = socket(servaddr->ai_family, servaddr->ai_socktype, servaddr->ai_protocol);
+    if (s0 == -1) {
+        lk_print_err("socket()");
+        return -1;
+    }
 
-    int z = listen(listen_sock, 5);
+    int yes=1;
+    z = setsockopt(s0, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    if (z == -1) {
+        lk_print_err("setsockopt(SO_REUSEADDR)");
+        return z;
+    }
+
+    z = bind(s0, servaddr->ai_addr, servaddr->ai_addrlen);
+    if (z == -1) {
+        lk_print_err("bind()");
+        return z;
+    }
+
+    z = listen(s0, 5);
     if (z != 0) {
         lk_print_err("listen()");
         return z;
     }
 
+    LKString *server_ipaddr_str = lk_get_ipaddr_string(servaddr->ai_addr);
+    printf("Serving HTTP on %s port %s...\n", server_ipaddr_str->s, settings->port->s);
+    lk_string_free(server_ipaddr_str);
+    freeaddrinfo(servaddr);
+
+    printf("home_dir: '%s', cgi_dir: '%s'\n", settings->homedir->s, settings->cgidir->s);
+
+    clearenv();
+    set_cgi_env1(server);
+
     FD_ZERO(&server->readfds);
     FD_ZERO(&server->writefds);
-    FD_SET_READ(listen_sock, server);
+    FD_SET_READ(s0, server);
 
     while (1) {
         // readfds contain the master list of read sockets
@@ -212,10 +268,10 @@ int lk_httpserver_serve(LKHttpServer *server, int listen_sock) {
         for (int i=0; i <= server->maxfd; i++) {
             if (FD_ISSET(i, &cur_readfds)) {
                 // New client connection
-                if (i == listen_sock) {
+                if (i == s0) {
                     socklen_t sa_len = sizeof(struct sockaddr_in);
                     struct sockaddr_in sa;
-                    int newclientsock = accept(listen_sock, (struct sockaddr*)&sa, &sa_len);
+                    int newclientsock = accept(s0, (struct sockaddr*)&sa, &sa_len);
                     if (newclientsock == -1) {
                         lk_print_err("accept()");
                         continue;
@@ -847,6 +903,8 @@ LKHttpServerSettings *create_serversettings() {
     LKHttpServerSettings *settings = malloc(sizeof(LKHttpServerSettings));
     settings->homedir = lk_string_new("");
     settings->homedir_abspath = lk_string_new("");
+    settings->host = lk_string_new("");
+    settings->port = lk_string_new("");
     settings->cgidir = lk_string_new("");
     settings->aliases = lk_stringtable_new();
     return settings;
@@ -855,11 +913,15 @@ LKHttpServerSettings *create_serversettings() {
 void free_serversettings(LKHttpServerSettings *settings) {
     lk_string_free(settings->homedir);
     lk_string_free(settings->homedir_abspath);
+    lk_string_free(settings->host);
+    lk_string_free(settings->port);
     lk_string_free(settings->cgidir);
     lk_stringtable_free(settings->aliases);
 
     settings->homedir = NULL;
     settings->homedir_abspath = NULL;
+    settings->host = NULL;
+    settings->port = NULL;
     settings->cgidir = NULL;
     settings->aliases = NULL;
     free(settings);
