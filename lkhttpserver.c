@@ -41,6 +41,7 @@ void finalize_settings(LKHttpServerSettings *settings);
 void read_request_from_client(LKHttpServer *server, LKHttpServerContext *ctx);
 void read_responsefile(LKHttpServer *server, LKHttpServerContext *ctx);
 void process_request(LKHttpServer *server, LKHttpServerContext *ctx);
+void match_aliases(LKString *path, LKStringTable *aliases);
 
 void serve_files(LKHttpServer *server, LKHttpServerContext *ctx);
 void serve_cgi(LKHttpServer *server, LKHttpServerContext *ctx);
@@ -425,6 +426,9 @@ void read_responsefile(LKHttpServer *server, LKHttpServerContext *ctx) {
 }
 
 void process_request(LKHttpServer *server, LKHttpServerContext *ctx) {
+    // Replace path with any matching alias.
+    match_aliases(ctx->req->path, server->settings->aliases);
+
     // Run cgi script if uri falls under cgidir
     if (lk_string_starts_with(ctx->req->uri, server->settings->cgidir->s)) {
         serve_cgi(server, ctx);
@@ -435,6 +439,14 @@ void process_request(LKHttpServer *server, LKHttpServerContext *ctx) {
     process_response(server, ctx);
 }
 
+// Replace path with any matching alias.
+// Ex. path: "/latest" => "/latest.html"
+void match_aliases(LKString *path, LKStringTable *aliases) {
+    char *match = lk_stringtable_get(aliases, path->s);
+    if (match != NULL) {
+        lk_string_assign(path, match);
+    }
+}
 
 // Generate an http response to an http request.
 #define POSTTEST
@@ -468,13 +480,6 @@ void serve_files(LKHttpServer *server, LKHttpServerContext *ctx) {
             lk_httpresponse_add_header(resp, "Content-Type", "text/html");
             lk_buffer_append(resp->body, html_sample, strlen(html_sample));
             return;
-        }
-
-        // Use alias if there's a match for path.
-        // Ex. path: "/latest" => "/latest.html"
-        char *alias_path = lk_stringtable_get(settings->aliases, path);
-        if (alias_path != NULL) {
-            path = alias_path;
         }
 
         // For root, default to index.html, ...
