@@ -80,6 +80,7 @@ void lk_httprequestparser_reset(LKHttpRequestParser *parser);
 void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
 void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, size_t buf_len);
 
+
 /*** LKHttpCGIParser ***/
 typedef struct {
     int head_complete;              // flag indicating header lines complete
@@ -94,27 +95,41 @@ void lk_httpcgiparser_parse_line(LKHttpCGIParser *parser, char *line);
 void lk_httpcgiparser_parse_bytes(LKHttpCGIParser *parser, char *buf, size_t buf_len);
 
 
-/*** LKHttpServer ***/
+/*** LKContext ***/
+typedef enum {
+    CTX_READ_REQ,
+    CTX_READ_CGI,
+    CTX_WRITE_RESP
+} LKContextType;
 
-typedef struct serverctx_s {
-    // client socket fd
-    int fd;
-    // response file fd (static server file or cgi output)
-    int serverfile_fd;
+typedef struct lkcontext_s {
+    int selectfd;
+    int clientfd;
+    LKContextType type;
+    struct lkcontext_s *next;         // link to next ctx
 
+    // Used by CTX_READ_REQ:
     struct sockaddr_in client_sa;     // client address
     LKString *client_ipaddr;          // client ip address string
     unsigned short client_port;       // client port number
     LKSocketReader *sr;               // input buffer for reading lines
+    LKHttpRequestParser *reqparser;   // parser for httprequest
     LKHttpRequest *req;               // http request so far
     LKHttpResponse *resp;             // http response to be sent
-    LKHttpRequestParser *reqparser;   // parser for httprequest
+                                      //
+    // Used by CTX_READ_CGI:
     LKHttpCGIParser *cgiparser;       // parser for cgi stream
     LKBuffer *cgibuf;                 // cgi stream
+} LKContext;
 
-    struct serverctx_s *next;           // link to next ctx
-} LKHttpServerContext;
+LKContext *create_context(int fd, struct sockaddr_in *sa);
+void free_context(LKContext *ctx);
+void add_context(LKContext **pphead, LKContext *ctx);
+void remove_context(LKContext **pphead, int fd);
+LKContext *match_ctx(LKContext *phead, int fd);
 
+
+/*** LKHttpServer ***/
 typedef struct {
     LKString *homedir;
     LKString *homedir_abspath;
@@ -125,7 +140,7 @@ typedef struct {
 } LKHttpServerSettings;
 
 typedef struct {
-    LKHttpServerContext *ctxhead;
+    LKContext *ctxhead;
     LKHttpServerSettings *settings;
     fd_set readfds;
     fd_set writefds;
