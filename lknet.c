@@ -11,6 +11,45 @@
 #include "lklib.h"
 #include "lknet.h"
 
+int lk_open_socket(char *host, char *port, struct sockaddr *psa) {
+    int z;
+
+    struct addrinfo hints, *ai;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    z = getaddrinfo(host, port, &hints, &ai);
+    if (z != 0) {
+        printf("getaddrinfo(): %s\n", gai_strerror(z));
+        errno = EINVAL;
+        return -1;
+    }
+    if (psa != NULL) {
+        memcpy(psa, ai, sizeof(struct sockaddr));
+    }
+
+    int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (fd == -1) {
+        freeaddrinfo(ai);
+        return -1;
+    }
+    int yes=1;
+    z = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    if (z == -1) {
+        freeaddrinfo(ai);
+        return z;
+    }
+    z = bind(fd, ai->ai_addr, ai->ai_addrlen);
+    if (z == -1) {
+        freeaddrinfo(ai);
+        return z;
+    }
+
+    freeaddrinfo(ai);
+    return fd;
+}
+
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s) {
     int slen = strlen(s);

@@ -162,6 +162,7 @@ int lk_httpserver_serve(LKHttpServer *server);
 
 
 /*** socket helper functions ***/
+int lk_open_socket(char *host, char *port, struct sockaddr *psa);
 int lk_sock_recv(int sock, char *buf, size_t count, size_t *ret_nread);
 int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
 void lk_set_sock_timeout(int sock, int nsecs, int ms);
