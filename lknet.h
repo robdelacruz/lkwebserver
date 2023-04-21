@@ -100,7 +100,10 @@ void lk_httpcgiparser_parse_bytes(LKHttpCGIParser *parser, char *buf, size_t buf
 typedef enum {
     CTX_READ_REQ,
     CTX_READ_CGI,
-    CTX_WRITE_RESP
+    CTX_WRITE_RESP,
+    CTX_PROXYPASS_WRITE_REQ,
+    CTX_PROXYPASS_READ_RESP,
+    CTX_PROXYPASS_WRITE_RESP
 } LKContextType;
 
 typedef struct lkcontext_s {
@@ -121,6 +124,10 @@ typedef struct lkcontext_s {
     // Used by CTX_READ_CGI:
     LKHttpCGIParser *cgiparser;       // parser for cgi stream
     LKBuffer *cgibuf;                 // cgi stream
+
+    // Used by CTX_PROXYPASS_WRITE_REQ:
+    int proxyfd;
+    LKBuffer *proxypass_respbuf;
 } LKContext;
 
 LKContext *create_context(int fd, struct sockaddr_in *sa);

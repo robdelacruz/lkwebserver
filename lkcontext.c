@@ -35,6 +35,9 @@ LKContext *create_context(int fd, struct sockaddr_in *sa) {
     ctx->cgiparser = NULL;
     ctx->cgibuf = NULL;
 
+    ctx->proxyfd = 0;
+    ctx->proxypass_respbuf = NULL;
+
     return ctx;
 }
 
@@ -60,6 +63,9 @@ void free_context(LKContext *ctx) {
     if (ctx->cgibuf) {
         lk_buffer_free(ctx->cgibuf);
     }
+    if (ctx->proxypass_respbuf) {
+        lk_buffer_free(ctx->proxypass_respbuf);
+    }
 
     ctx->selectfd = 0;
     ctx->clientfd = 0;
@@ -72,6 +78,8 @@ void free_context(LKContext *ctx) {
     ctx->resp = NULL;
     ctx->cgiparser = NULL;
     ctx->cgibuf = NULL;
+    ctx->proxyfd = 0;
+    ctx->proxypass_respbuf = NULL;
     free(ctx);
 }
 

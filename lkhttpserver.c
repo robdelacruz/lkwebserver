@@ -51,7 +51,12 @@ char *fileext(char *filepath);
 
 void write_response(LKHttpServer *server, LKContext *ctx);
 int send_buf_bytes(int sock, LKBuffer *buf);
-void terminate_client_session(LKHttpServer *server, int clientfd);
+void terminate_client_session(LKHttpServer *server, LKContext *ctx);
+
+void serve_proxypass(LKHttpServer *server, LKContext *ctx, char *targethost);
+void write_proxypass_request(LKHttpServer *server, LKContext *ctx);
+void read_proxypass_response(LKHttpServer *server, LKContext *ctx);
+void write_proxypass_response(LKHttpServer *server, LKContext *ctx);
 
 
 /*** LKHttpServer functions ***/
@@ -268,6 +273,8 @@ int lk_httpserver_serve(LKHttpServer *server) {
                         read_request(server, ctx);
                     } else if (ctx->type == CTX_READ_CGI) {
                         read_cgistream(server, ctx);
+                    } else if (ctx->type == CTX_PROXYPASS_READ_RESP) {
+                        read_proxypass_response(server, ctx);
                     } else {
                         printf("read fd %d with unknown ctx type %d\n", fd, ctx->type);
                     }
@@ -286,6 +293,13 @@ int lk_httpserver_serve(LKHttpServer *server) {
                     assert(ctx->resp != NULL);
                     assert(ctx->resp->head != NULL);
                     write_response(server, ctx);
+                } else if (ctx->type == CTX_PROXYPASS_WRITE_REQ) {
+                    assert(ctx->req != NULL);
+                    assert(ctx->req->head != NULL);
+                    write_proxypass_request(server, ctx);
+                } else if (ctx->type == CTX_PROXYPASS_WRITE_RESP) {
+                    assert(ctx->proxypass_respbuf != NULL);
+                    write_proxypass_response(server, ctx);
                 } else {
                     printf("write fd %d with unknown ctx type %d\n", fd, ctx->type);
                 }
@@ -465,6 +479,11 @@ void process_request(LKHttpServer *server, LKContext *ctx) {
     // When all resp received:
     // ctx->type = CTX_WRITE_RESP
     // close(ctx->proxy_fd)
+    char *host = lk_stringtable_get(ctx->req->headers, "Host");
+    if (host != NULL && !strcmp(host, "robdelacruz.xyz")) {
+        serve_proxypass(server, ctx, "localhost:8001");
+        return;
+    }
 
     // Replace path with any matching alias.
     match_aliases(ctx->req->path, server->settings->aliases);
@@ -477,6 +496,22 @@ void process_request(LKHttpServer *server, LKContext *ctx) {
 
     serve_files(server, ctx);
     process_response(server, ctx);
+}
+
+void serve_proxypass(LKHttpServer *server, LKContext *ctx, char *targethost) {
+    int proxyfd = lk_open_socket(targethost, "", NULL);
+    if (proxyfd == -1) {
+        printf("Unable to pass to host '%s'\n", targethost);
+        lk_print_err("lk_open_socket()");
+        terminate_client_session(server, ctx);
+        return;
+    }
+
+    lk_httprequest_finalize(ctx->req);
+    ctx->proxyfd = proxyfd;
+    ctx->selectfd = proxyfd;
+    ctx->type = CTX_PROXYPASS_WRITE_REQ;
+    FD_SET_WRITE(proxyfd, server);
 }
 
 // Replace path with any matching alias.
@@ -719,19 +754,107 @@ void write_response(LKHttpServer *server, LKContext *ctx) {
         int z = send_buf_bytes(ctx->selectfd, resp->head);
         if (z == -1 && errno == EPIPE) {
             // client socket was shutdown
-            terminate_client_session(server, ctx->selectfd);
+            terminate_client_session(server, ctx);
             return;
         }
     } else if (resp->body->bytes_cur < resp->body->bytes_len) {
         int z = send_buf_bytes(ctx->selectfd, resp->body);
         if (z == -1 && errno == EPIPE) {
             // client socket was shutdown
-            terminate_client_session(server, ctx->selectfd);
+            terminate_client_session(server, ctx);
             return;
         }
     } else {
         // Completed sending http response.
-        terminate_client_session(server, ctx->selectfd);
+        terminate_client_session(server, ctx);
+    }
+}
+
+void write_proxypass_request(LKHttpServer *server, LKContext *ctx) {
+    LKHttpRequest *req = ctx->req;
+
+    // Send as much request bytes as the proxypass will receive.
+    // Send request head bytes first, then request body bytes.
+    if (req->head->bytes_cur < req->head->bytes_len) {
+        int z = send_buf_bytes(ctx->selectfd, req->head);
+        if (z == -1 && errno == EPIPE) {
+            // client socket was shutdown
+            lk_print_err("send_buf_bytes()");
+            terminate_client_session(server, ctx);
+            return;
+        }
+    } else if (req->body->bytes_cur < req->body->bytes_len) {
+        int z = send_buf_bytes(ctx->selectfd, req->body);
+        if (z == -1 && errno == EPIPE) {
+            // client socket was shutdown
+            lk_print_err("send_buf_bytes()");
+            terminate_client_session(server, ctx);
+            return;
+        }
+    } else {
+        // Completed sending http request.
+        FD_CLR_WRITE(ctx->selectfd, server);
+        ctx->type = CTX_PROXYPASS_READ_RESP;
+        ctx->proxypass_respbuf = lk_buffer_new(0);
+        FD_SET_READ(ctx->proxyfd, server);
+    }
+}
+
+void read_proxypass_response(LKHttpServer *server, LKContext *ctx) {
+    char buf[LK_BUFSIZE_LARGE];
+    int z = 0;
+
+    while (1) {
+        z = recv(ctx->selectfd, buf, sizeof(buf), MSG_DONTWAIT);
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        if (z == -1 || z == 0) {
+            break;
+        }
+        lk_buffer_append(ctx->proxypass_respbuf, buf, z);
+    }
+    if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        return;
+    }
+    if (z == -1) {
+        lk_print_err("recv()");
+        terminate_client_session(server, ctx);
+        return;
+    }
+    if (z == 0) {
+        FD_CLR_READ(ctx->proxyfd, server);
+
+        ctx->type = CTX_PROXYPASS_WRITE_RESP;
+        ctx->selectfd = ctx->clientfd;
+        FD_SET_WRITE(ctx->clientfd, server);
+
+        // Close proxyfd as we don't need it anymore.
+        z = close(ctx->proxyfd);
+        if (z == -1) {
+            lk_print_err("close()");
+        }
+        if (z == 0) {
+            ctx->proxyfd = 0;
+        }
+    }
+}
+
+void write_proxypass_response(LKHttpServer *server, LKContext *ctx) {
+    LKBuffer *buf = ctx->proxypass_respbuf;
+
+    // Send as much response bytes as the client will receive.
+    if (buf->bytes_cur < buf->bytes_len) {
+        int z = send_buf_bytes(ctx->selectfd, buf);
+        if (z == -1 && errno == EPIPE) {
+            // client socket was shutdown
+            lk_print_err("send_buf_bytes()");
+            terminate_client_session(server, ctx);
+            return;
+        }
+    } else {
+        // Completed sending proxypass response.
+        terminate_client_session(server, ctx);
     }
 }
 
@@ -748,20 +871,28 @@ int send_buf_bytes(int sock, LKBuffer *buf) {
 }
 
 // Disconnect from client.
-void terminate_client_session(LKHttpServer *server, int clientfd) {
-    FD_CLR_READ(clientfd, server);
-    FD_CLR_WRITE(clientfd, server);
+void terminate_client_session(LKHttpServer *server, LKContext *ctx) {
+    FD_CLR_READ(ctx->clientfd, server);
+    FD_CLR_WRITE(ctx->clientfd, server);
 
-    int z = shutdown(clientfd, SHUT_RDWR);
+    int z = shutdown(ctx->clientfd, SHUT_RDWR);
     if (z == -1) {
         lk_print_err("terminate_client_session(): shutdown()");
     }
-    z = close(clientfd);
-    if (z == -1) {
-        lk_print_err("close()");
+    if (ctx->clientfd) {
+        z = close(ctx->clientfd);
+        if (z == -1) {
+            lk_print_err("close()");
+        }
+    }
+    if (ctx->proxyfd) {
+        z = close(ctx->proxyfd);
+        if (z == -1) {
+            lk_print_err("close()");
+        }
     }
     // Remove client from ctx list.
-    remove_context(&server->ctxhead, clientfd);
+    remove_context(&server->ctxhead, ctx->selectfd);
 }
 
 /*** LKHttpServerSettings functions ***/
