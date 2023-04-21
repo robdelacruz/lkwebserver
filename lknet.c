@@ -406,6 +406,24 @@ void lk_httprequest_append_body(LKHttpRequest *req, char *bytes, int bytes_len) 
     lk_buffer_append(req->body, bytes, bytes_len);
 }
 
+void lk_httprequest_finalize(LKHttpRequest *req) {
+    lk_buffer_clear(req->head);
+
+    // Default to HTTP version.
+    if (lk_string_sz_equal(req->version, "")) {
+        lk_string_assign(req->version, "HTTP/1.0");
+    }
+    lk_buffer_append_sprintf(req->head, "%s %s %s\n", req->method->s, req->uri->s, req->version->s);
+    if (req->body->bytes_len > 0) {
+        lk_buffer_append_sprintf(req->head, "Content-Length: %ld\n", req->body->bytes_len);
+    }
+    for (int i=0; i < req->headers->items_len; i++) {
+        lk_buffer_append_sprintf(req->head, "%s: %s\n", req->headers->items[i].k->s, req->headers->items[i].v->s);
+    }
+    lk_buffer_append(req->head, "\r\n", 2);
+}
+
+
 void lk_httprequest_debugprint(LKHttpRequest *req) {
     assert(req->method != NULL);
     assert(req->uri != NULL);

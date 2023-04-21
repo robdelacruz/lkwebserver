@@ -26,6 +26,7 @@ LKHttpRequest *lk_httprequest_new();
 void lk_httprequest_free(LKHttpRequest *req);
 void lk_httprequest_add_header(LKHttpRequest *req, char *k, char *v);
 void lk_httprequest_append_body(LKHttpRequest *req, char *bytes, int bytes_len);
+void lk_httprequest_finalize(LKHttpRequest *req);
 void lk_httprequest_debugprint(LKHttpRequest *req);
 
 
