@@ -35,7 +35,6 @@ void finalize_settings(LKHttpServerSettings *settings);
 void read_request(LKHttpServer *server, LKContext *ctx);
 void read_cgistream(LKHttpServer *server, LKContext *ctx);
 void process_request(LKHttpServer *server, LKContext *ctx);
-void match_aliases(LKString *path, LKStringTable *aliases);
 
 void serve_files(LKHttpServer *server, LKContext *ctx);
 void serve_cgi(LKHttpServer *server, LKContext *ctx);
@@ -53,10 +52,10 @@ void write_response(LKHttpServer *server, LKContext *ctx);
 int send_buf_bytes(int sock, LKBuffer *buf);
 void terminate_client_session(LKHttpServer *server, LKContext *ctx);
 
-void serve_proxypass(LKHttpServer *server, LKContext *ctx, char *targethost);
-void write_proxypass_request(LKHttpServer *server, LKContext *ctx);
-void read_proxypass_response(LKHttpServer *server, LKContext *ctx);
-void write_proxypass_response(LKHttpServer *server, LKContext *ctx);
+void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost);
+void write_proxy_request(LKHttpServer *server, LKContext *ctx);
+void read_proxy_response(LKHttpServer *server, LKContext *ctx);
+void write_proxy_response(LKHttpServer *server, LKContext *ctx);
 
 
 /*** LKHttpServer functions ***/
@@ -124,7 +123,7 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
     char *port;
     char *host;
     char *cgidir;
-    char *alias_k, *alias_v;
+    char *k, *v;
     LKHttpServerSettings *settings = server->settings;
 
     va_list args;
@@ -160,9 +159,14 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
         }
         break;
     case LKHTTPSERVEROPT_ALIAS:
-        alias_k = va_arg(args, char*);
-        alias_v = va_arg(args, char*);
-        lk_stringtable_set(settings->aliases, alias_k, alias_v);
+        k = va_arg(args, char*);
+        v = va_arg(args, char*);
+        lk_stringtable_set(settings->aliases, k, v);
+        break;
+    case LKHTTPSERVEROPT_PROXYPASS:
+        k = va_arg(args, char*);
+        v = va_arg(args, char*);
+        lk_stringtable_set(settings->proxypass, k, v);
         break;
     default:
         break;
@@ -195,16 +199,12 @@ int lk_httpserver_serve(LKHttpServer *server) {
     LKHttpServerSettings *settings = server->settings;
     finalize_settings(settings);
 
+    int backlog = 50;
     struct sockaddr sa;
-    int s0 = lk_open_socket(settings->host->s, settings->port->s, &sa);
+    int s0 = lk_open_listen_socket(settings->host->s, settings->port->s, backlog, &sa);
     if (s0 == -1) {
-        lk_print_err("lk_open_socket()");
+        lk_print_err("lk_open_listen_socket() failed");
         return -1;
-    }
-    z = listen(s0, 5);
-    if (z != 0) {
-        lk_print_err("listen()");
-        return z;
     }
 
     LKString *server_ipaddr_str = lk_get_ipaddr_string(&sa);
@@ -273,8 +273,8 @@ int lk_httpserver_serve(LKHttpServer *server) {
                         read_request(server, ctx);
                     } else if (ctx->type == CTX_READ_CGI) {
                         read_cgistream(server, ctx);
-                    } else if (ctx->type == CTX_PROXYPASS_READ_RESP) {
-                        read_proxypass_response(server, ctx);
+                    } else if (ctx->type == CTX_PROXY_READ_RESP) {
+                        read_proxy_response(server, ctx);
                     } else {
                         printf("read fd %d with unknown ctx type %d\n", fd, ctx->type);
                     }
@@ -293,13 +293,13 @@ int lk_httpserver_serve(LKHttpServer *server) {
                     assert(ctx->resp != NULL);
                     assert(ctx->resp->head != NULL);
                     write_response(server, ctx);
-                } else if (ctx->type == CTX_PROXYPASS_WRITE_REQ) {
+                } else if (ctx->type == CTX_PROXY_WRITE_REQ) {
                     assert(ctx->req != NULL);
                     assert(ctx->req->head != NULL);
-                    write_proxypass_request(server, ctx);
-                } else if (ctx->type == CTX_PROXYPASS_WRITE_RESP) {
-                    assert(ctx->proxypass_respbuf != NULL);
-                    write_proxypass_response(server, ctx);
+                    write_proxy_request(server, ctx);
+                } else if (ctx->type == CTX_PROXY_WRITE_RESP) {
+                    assert(ctx->proxy_respbuf != NULL);
+                    write_proxy_response(server, ctx);
                 } else {
                     printf("write fd %d with unknown ctx type %d\n", fd, ctx->type);
                 }
@@ -397,9 +397,7 @@ void read_request(LKHttpServer *server, LKContext *ctx) {
         }
         if (ctx->reqparser->body_complete) {
             FD_CLR_READ(ctx->selectfd, server);
-            if (shutdown(ctx->selectfd, SHUT_RD) == -1) {
-                lk_print_err("read_request shutdown()");
-            }
+            shutdown(ctx->selectfd, SHUT_RD);
             process_request(server, ctx);
             break;
         }
@@ -463,30 +461,24 @@ void read_cgistream(LKHttpServer *server, LKContext *ctx) {
 }
 
 void process_request(LKHttpServer *server, LKContext *ctx) {
-    //$$todo: Check if req "HOST" header exists
-    // and matches proxy pass host
-    // Ex. -p fortune2.robdelacruz.xyz=>localhost:8001
-    //
-    // If header(HOST) matches fortune2.robdelacruz.xyz,
-    // generate req buf and send to localhost:8001
-    // ctx->type = CTX_PROXYPASS_WRITE_REQ
-    // ctx->proxy_fd = lk_socket("localhost", "8001")
-    //
-    // When all req buf finished sending:
-    // ctx->type = CTX_PROXYPASS_READ_RESP
-    // receive from ctx->proxy_fd, copy to ctx->resp.
-    //
-    // When all resp received:
-    // ctx->type = CTX_WRITE_RESP
-    // close(ctx->proxy_fd)
+    LKHttpServerSettings *settings = server->settings;
+
+    // Check if request header Host matches any proxy pass.
     char *host = lk_stringtable_get(ctx->req->headers, "Host");
-    if (host != NULL && !strcmp(host, "robdelacruz.xyz")) {
-        serve_proxypass(server, ctx, "localhost:8001");
-        return;
+    if (host != NULL) {
+        printf("process_request() host: '%s'\n", host);
+        char *targethost = lk_stringtable_get(settings->proxypass, host);
+        if (targethost != NULL) {
+            serve_proxy(server, ctx, targethost);
+            return;
+        }
     }
 
     // Replace path with any matching alias.
-    match_aliases(ctx->req->path, server->settings->aliases);
+    char *match = lk_stringtable_get(server->settings->aliases, ctx->req->path->s);
+    if (match != NULL) {
+        lk_string_assign(ctx->req->path, match);
+    }
 
     // Run cgi script if uri falls under cgidir
     if (lk_string_starts_with(ctx->req->uri, server->settings->cgidir->s)) {
@@ -496,31 +488,6 @@ void process_request(LKHttpServer *server, LKContext *ctx) {
 
     serve_files(server, ctx);
     process_response(server, ctx);
-}
-
-void serve_proxypass(LKHttpServer *server, LKContext *ctx, char *targethost) {
-    int proxyfd = lk_open_socket(targethost, "", NULL);
-    if (proxyfd == -1) {
-        printf("Unable to pass to host '%s'\n", targethost);
-        lk_print_err("lk_open_socket()");
-        terminate_client_session(server, ctx);
-        return;
-    }
-
-    lk_httprequest_finalize(ctx->req);
-    ctx->proxyfd = proxyfd;
-    ctx->selectfd = proxyfd;
-    ctx->type = CTX_PROXYPASS_WRITE_REQ;
-    FD_SET_WRITE(proxyfd, server);
-}
-
-// Replace path with any matching alias.
-// Ex. path: "/latest" => "/latest.html"
-void match_aliases(LKString *path, LKStringTable *aliases) {
-    char *match = lk_stringtable_get(aliases, path->s);
-    if (match != NULL) {
-        lk_string_assign(path, match);
-    }
 }
 
 // Generate an http response to an http request.
@@ -770,10 +737,28 @@ void write_response(LKHttpServer *server, LKContext *ctx) {
     }
 }
 
-void write_proxypass_request(LKHttpServer *server, LKContext *ctx) {
+void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost) {
+    int proxyfd = lk_open_connect_socket(targethost, "", NULL);
+    if (proxyfd == -1) {
+        printf("Unable to pass to host '%s'\n", targethost);
+        lk_print_err("lk_open_connect_socket()");
+        terminate_client_session(server, ctx);
+        return;
+    }
+
+    printf("serve_proxy targethost: '%s'\n", targethost);
+    lk_httprequest_finalize(ctx->req);
+    ctx->proxyfd = proxyfd;
+    ctx->selectfd = proxyfd;
+    ctx->type = CTX_PROXY_WRITE_REQ;
+    FD_SET_WRITE(proxyfd, server);
+}
+
+void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
+    printf("write_proxy_request()\n");
     LKHttpRequest *req = ctx->req;
 
-    // Send as much request bytes as the proxypass will receive.
+    // Send as much request bytes as the proxy will receive.
     // Send request head bytes first, then request body bytes.
     if (req->head->bytes_cur < req->head->bytes_len) {
         int z = send_buf_bytes(ctx->selectfd, req->head);
@@ -792,15 +777,19 @@ void write_proxypass_request(LKHttpServer *server, LKContext *ctx) {
             return;
         }
     } else {
+        printf("write_proxy_request() complete\n");
         // Completed sending http request.
         FD_CLR_WRITE(ctx->selectfd, server);
-        ctx->type = CTX_PROXYPASS_READ_RESP;
-        ctx->proxypass_respbuf = lk_buffer_new(0);
-        FD_SET_READ(ctx->proxyfd, server);
+        shutdown(ctx->selectfd, SHUT_WR);
+
+        ctx->type = CTX_PROXY_READ_RESP;
+        ctx->proxy_respbuf = lk_buffer_new(0);
+        FD_SET_READ(ctx->selectfd, server);
     }
 }
 
-void read_proxypass_response(LKHttpServer *server, LKContext *ctx) {
+void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
+    printf("read_proxy_response()\n");
     char buf[LK_BUFSIZE_LARGE];
     int z = 0;
 
@@ -812,7 +801,7 @@ void read_proxypass_response(LKHttpServer *server, LKContext *ctx) {
         if (z == -1 || z == 0) {
             break;
         }
-        lk_buffer_append(ctx->proxypass_respbuf, buf, z);
+        lk_buffer_append(ctx->proxy_respbuf, buf, z);
     }
     if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         return;
@@ -823,9 +812,11 @@ void read_proxypass_response(LKHttpServer *server, LKContext *ctx) {
         return;
     }
     if (z == 0) {
+        printf("read_proxy_response() complete\n");
         FD_CLR_READ(ctx->proxyfd, server);
+        shutdown(ctx->selectfd, SHUT_RD);
 
-        ctx->type = CTX_PROXYPASS_WRITE_RESP;
+        ctx->type = CTX_PROXY_WRITE_RESP;
         ctx->selectfd = ctx->clientfd;
         FD_SET_WRITE(ctx->clientfd, server);
 
@@ -840,8 +831,9 @@ void read_proxypass_response(LKHttpServer *server, LKContext *ctx) {
     }
 }
 
-void write_proxypass_response(LKHttpServer *server, LKContext *ctx) {
-    LKBuffer *buf = ctx->proxypass_respbuf;
+void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
+    printf("write_proxy_response()\n");
+    LKBuffer *buf = ctx->proxy_respbuf;
 
     // Send as much response bytes as the client will receive.
     if (buf->bytes_cur < buf->bytes_len) {
@@ -853,7 +845,8 @@ void write_proxypass_response(LKHttpServer *server, LKContext *ctx) {
             return;
         }
     } else {
-        // Completed sending proxypass response.
+        // Completed sending proxy response.
+        printf("write_proxy_response() complete\n");
         terminate_client_session(server, ctx);
     }
 }
@@ -872,14 +865,16 @@ int send_buf_bytes(int sock, LKBuffer *buf) {
 
 // Disconnect from client.
 void terminate_client_session(LKHttpServer *server, LKContext *ctx) {
+    printf("terminate_client_session() clientfd: %d proxyfd: %d\n", ctx->clientfd, ctx->proxyfd);
+    int z;
     FD_CLR_READ(ctx->clientfd, server);
     FD_CLR_WRITE(ctx->clientfd, server);
 
-    int z = shutdown(ctx->clientfd, SHUT_RDWR);
-    if (z == -1) {
-        lk_print_err("terminate_client_session(): shutdown()");
-    }
     if (ctx->clientfd) {
+        z = shutdown(ctx->clientfd, SHUT_RDWR);
+        if (z == -1) {
+            lk_print_err("terminate_client_session(): shutdown()");
+        }
         z = close(ctx->clientfd);
         if (z == -1) {
             lk_print_err("close()");
@@ -904,6 +899,7 @@ LKHttpServerSettings *create_serversettings() {
     settings->port = lk_string_new("");
     settings->cgidir = lk_string_new("");
     settings->aliases = lk_stringtable_new();
+    settings->proxypass = lk_stringtable_new();
     return settings;
 }
 
@@ -914,6 +910,7 @@ void free_serversettings(LKHttpServerSettings *settings) {
     lk_string_free(settings->port);
     lk_string_free(settings->cgidir);
     lk_stringtable_free(settings->aliases);
+    lk_stringtable_free(settings->proxypass);
 
     settings->homedir = NULL;
     settings->homedir_abspath = NULL;
@@ -921,5 +918,6 @@ void free_serversettings(LKHttpServerSettings *settings) {
     settings->port = NULL;
     settings->cgidir = NULL;
     settings->aliases = NULL;
+    settings->proxypass = NULL;
     free(settings);
 }

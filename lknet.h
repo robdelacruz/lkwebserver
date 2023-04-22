@@ -101,9 +101,9 @@ typedef enum {
     CTX_READ_REQ,
     CTX_READ_CGI,
     CTX_WRITE_RESP,
-    CTX_PROXYPASS_WRITE_REQ,
-    CTX_PROXYPASS_READ_RESP,
-    CTX_PROXYPASS_WRITE_RESP
+    CTX_PROXY_WRITE_REQ,
+    CTX_PROXY_READ_RESP,
+    CTX_PROXY_WRITE_RESP
 } LKContextType;
 
 typedef struct lkcontext_s {
@@ -125,9 +125,9 @@ typedef struct lkcontext_s {
     LKHttpCGIParser *cgiparser;       // parser for cgi stream
     LKBuffer *cgibuf;                 // cgi stream
 
-    // Used by CTX_PROXYPASS_WRITE_REQ:
+    // Used by CTX_PROXY_WRITE_REQ:
     int proxyfd;
-    LKBuffer *proxypass_respbuf;
+    LKBuffer *proxy_respbuf;
 } LKContext;
 
 LKContext *create_context(int fd, struct sockaddr_in *sa);
@@ -145,6 +145,7 @@ typedef struct {
     LKString *port;
     LKString *cgidir;
     LKStringTable *aliases;
+    LKStringTable *proxypass;
 } LKHttpServerSettings;
 
 typedef struct {
@@ -160,7 +161,8 @@ typedef enum {
     LKHTTPSERVEROPT_PORT,
     LKHTTPSERVEROPT_HOST,
     LKHTTPSERVEROPT_CGIDIR,
-    LKHTTPSERVEROPT_ALIAS
+    LKHTTPSERVEROPT_ALIAS,
+    LKHTTPSERVEROPT_PROXYPASS
 } LKHttpServerOpt;
 
 LKHttpServer *lk_httpserver_new();
@@ -170,7 +172,8 @@ int lk_httpserver_serve(LKHttpServer *server);
 
 
 /*** socket helper functions ***/
-int lk_open_socket(char *host, char *port, struct sockaddr *psa);
+int lk_open_listen_socket(char *host, char *port, int backlog, struct sockaddr *psa);
+int lk_open_connect_socket(char *host, char *port, struct sockaddr *psa);
 int lk_sock_recv(int sock, char *buf, size_t count, size_t *ret_nread);
 int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
 void lk_set_sock_timeout(int sock, int nsecs, int ms);

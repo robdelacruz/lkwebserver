@@ -11,7 +11,7 @@
 #include "lklib.h"
 #include "lknet.h"
 
-int lk_open_socket(char *host, char *port, struct sockaddr *psa) {
+int lk_open_listen_socket(char *host, char *port, int backlog, struct sockaddr *psa) {
     int z;
 
     struct addrinfo hints, *ai;
@@ -31,24 +31,93 @@ int lk_open_socket(char *host, char *port, struct sockaddr *psa) {
 
     int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
     if (fd == -1) {
-        freeaddrinfo(ai);
-        return -1;
+        lk_print_err("socket()");
+        z = -1;
+        goto error_return;
     }
     int yes=1;
     z = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
     if (z == -1) {
-        freeaddrinfo(ai);
-        return z;
+        lk_print_err("setsockopt()");
+        goto error_return;
     }
     z = bind(fd, ai->ai_addr, ai->ai_addrlen);
     if (z == -1) {
-        freeaddrinfo(ai);
-        return z;
+        lk_print_err("bind()");
+        goto error_return;
+    }
+    z = listen(fd, backlog);
+    if (z == -1) {
+        lk_print_err("listen()");
+        goto error_return;
     }
 
     freeaddrinfo(ai);
     return fd;
+
+error_return:
+    freeaddrinfo(ai);
+    return z;
 }
+
+// You can specify the host and port in two ways:
+// 1. host="littlekitten.xyz", port="5001" (separate host and port)
+// 2. host="littlekitten.xyz:5001", port="" (combine host:port in host parameter)
+int lk_open_connect_socket(char *host, char *port, struct sockaddr *psa) {
+    int z;
+
+    // If host is of the form "host:port", parse it.
+    LKString *lksport = lk_string_new(host);
+    LKStringList *ss = lk_string_split(lksport, ":");
+    if (ss->items_len == 2) {
+        host = ss->items[0]->s;
+        port = ss->items[1]->s;
+    }
+
+    struct addrinfo hints, *ai;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    z = getaddrinfo(host, port, &hints, &ai);
+    if (z != 0) {
+        printf("getaddrinfo(): %s\n", gai_strerror(z));
+        errno = EINVAL;
+        return -1;
+    }
+    if (psa != NULL) {
+        memcpy(psa, ai, sizeof(struct sockaddr));
+    }
+
+    lk_stringlist_free(ss);
+    lk_string_free(lksport);
+
+    int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (fd == -1) {
+        lk_print_err("socket()");
+        z = -1;
+        goto error_return;
+    }
+    int yes=1;
+    z = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    if (z == -1) {
+        lk_print_err("setsockopt()");
+        goto error_return;
+    }
+    z = connect(fd, ai->ai_addr, ai->ai_addrlen);
+    if (z == -1) {
+        lk_print_err("connect()");
+        goto error_return;
+    }
+
+    freeaddrinfo(ai);
+    return fd;
+
+error_return:
+    freeaddrinfo(ai);
+    return z;
+}
+
 
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s) {
