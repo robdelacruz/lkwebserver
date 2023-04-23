@@ -26,7 +26,7 @@ int lk_open_listen_socket(char *host, char *port, int backlog, struct sockaddr *
         return -1;
     }
     if (psa != NULL) {
-        memcpy(psa, ai, sizeof(struct sockaddr));
+        memcpy(psa, ai->ai_addr, ai->ai_addrlen);
     }
 
     int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
@@ -86,7 +86,7 @@ int lk_open_connect_socket(char *host, char *port, struct sockaddr *psa) {
         return -1;
     }
     if (psa != NULL) {
-        memcpy(psa, ai, sizeof(struct sockaddr));
+        memcpy(psa, ai->ai_addr, ai->ai_addrlen);
     }
 
     lk_stringlist_free(ss);
@@ -171,6 +171,7 @@ LKString *lk_get_ipaddr_string(struct sockaddr *sa) {
     const char *pz = inet_ntop(sa->sa_family, sockaddr_sin_addr(sa),
                                servipstr, sizeof(servipstr));
     if (pz == NULL) {
+        lk_print_err("inet_ntop()");
         return lk_string_new("");
     }
     return lk_string_new(servipstr);
