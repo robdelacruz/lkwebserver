@@ -211,8 +211,6 @@ int lk_httpserver_serve(LKHttpServer *server) {
     printf("Serving HTTP on %s port %s...\n", server_ipaddr_str->s, settings->port->s);
     lk_string_free(server_ipaddr_str);
 
-    printf("home_dir: '%s', cgi_dir: '%s'\n", settings->homedir->s, settings->cgidir->s);
-
     clearenv();
     set_cgi_env1(server);
 
@@ -259,9 +257,6 @@ int lk_httpserver_serve(LKHttpServer *server) {
                 } else {
                     //printf("read fd %d\n", i);
 
-                    // Read fd could be one of the following:
-                    // - http request
-                    // - cgi output
                     int fd = i;
                     LKContext *ctx = match_ctx(server->ctxhead, fd);
                     if (ctx == NULL) {
@@ -466,7 +461,6 @@ void process_request(LKHttpServer *server, LKContext *ctx) {
     // Check if request header Host matches any proxy pass.
     char *host = lk_stringtable_get(ctx->req->headers, "Host");
     if (host != NULL) {
-        printf("process_request() host: '%s'\n", host);
         char *targethost = lk_stringtable_get(settings->proxypass, host);
         if (targethost != NULL) {
             serve_proxy(server, ctx, targethost);
@@ -621,6 +615,7 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx) {
     close(fd_err);
 
     // Read cgi output in select()
+    //$$ fd_err should also be output so we can debug cgi errors?
     ctx->selectfd = fd_out;
     ctx->type = CTX_READ_CGI;
     ctx->cgibuf = lk_buffer_new(0);
@@ -740,13 +735,11 @@ void write_response(LKHttpServer *server, LKContext *ctx) {
 void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost) {
     int proxyfd = lk_open_connect_socket(targethost, "", NULL);
     if (proxyfd == -1) {
-        printf("Unable to pass to host '%s'\n", targethost);
         lk_print_err("lk_open_connect_socket()");
         terminate_client_session(server, ctx);
         return;
     }
 
-    printf("serve_proxy targethost: '%s'\n", targethost);
     lk_httprequest_finalize(ctx->req);
     ctx->proxyfd = proxyfd;
     ctx->selectfd = proxyfd;
@@ -755,7 +748,6 @@ void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost) {
 }
 
 void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
-    printf("write_proxy_request()\n");
     LKHttpRequest *req = ctx->req;
 
     // Send as much request bytes as the proxy will receive.
@@ -777,7 +769,6 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
             return;
         }
     } else {
-        printf("write_proxy_request() complete\n");
         // Completed sending http request.
         FD_CLR_WRITE(ctx->selectfd, server);
         shutdown(ctx->selectfd, SHUT_WR);
@@ -789,7 +780,6 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
 }
 
 void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
-    printf("read_proxy_response()\n");
     char buf[LK_BUFSIZE_LARGE];
     int z = 0;
 
@@ -812,7 +802,6 @@ void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
         return;
     }
     if (z == 0) {
-        printf("read_proxy_response() complete\n");
         FD_CLR_READ(ctx->proxyfd, server);
         shutdown(ctx->selectfd, SHUT_RD);
 
@@ -832,7 +821,6 @@ void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
 }
 
 void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
-    printf("write_proxy_response()\n");
     LKBuffer *buf = ctx->proxy_respbuf;
 
     // Send as much response bytes as the client will receive.
@@ -846,7 +834,6 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
         }
     } else {
         // Completed sending proxy response.
-        printf("write_proxy_response() complete\n");
         terminate_client_session(server, ctx);
     }
 }
@@ -865,7 +852,6 @@ int send_buf_bytes(int sock, LKBuffer *buf) {
 
 // Disconnect from client.
 void terminate_client_session(LKHttpServer *server, LKContext *ctx) {
-    printf("terminate_client_session() clientfd: %d proxyfd: %d\n", ctx->clientfd, ctx->proxyfd);
     int z;
     FD_CLR_READ(ctx->clientfd, server);
     FD_CLR_WRITE(ctx->clientfd, server);
