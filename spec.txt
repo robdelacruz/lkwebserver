@@ -1,13 +1,38 @@
+Todo:
+- config file for parameters/settings as alternative to command-line switches
+- handle HEAD http request
+- show cgi stderr in cgi response output
+- support cgi request post with body content
+- specify alias to cgi file Ex. -cgialias guestbook=guestbook.pl
+
 command line:
 
-$ lkws <home_dir>
-(default cgi directory is cgi-bin)
+// lkws [homedir] [port] [host] [-a <alias1>=<path>]...
+// homedir = absolute or relative path to a home directory
+//           defaults to current working directory if not specified
+// port    = port number to bind to server
+//           defaults to 8000
+// host    = IP address to bind to server
+//           defaults to localhost
+// Examples:
+// lkws ./testsite/ 8080 -a latest=latest.html -a about=about.html
+// lkws /var/www/testsite/ 8080 127.0.0.1 -a latest=folder/latest.html
+// lkws /var/www/testsite/ --cgidir=cgifolder
+// lkws ./testsite -p newsboard.littlekitten.xyz=localhost:8001
+// lkws -f config.conf
 
-$ lkws --homedir=testsite --cgidir=cgi-bin
-
-$ lkws testsite/ -a /latest=/latest.html -a about=/about.html
-$ lkws testsite/ -a latest=foo/latest.html -a about=about.html
-(pass aliases /latest, /about)
+config file:
+------------
+homedir=/var/www/testsite
+cgidir=cgi-bin (relative to homedir)
+port=5000
+host=127.0.0.1
+alias latest=latest.html
+alias about=about.html
+cgialias guestbook=guestbook.pl
+cgialias blog=blog.pl
+proxypass newsboard.littlekitten.xyz=localhost:8001
+proxypass fortune2.littlekitten.xyz=localhost:8002
 
 
 python simplehttpserver returns the following:
