@@ -4,6 +4,7 @@ Todo:
 - show cgi stderr in cgi response output
 - support cgi request post with body content
 - specify alias to cgi file Ex. -cgialias guestbook=guestbook.pl
+- specify chunked transfer encoding 
 
 command line:
 
@@ -23,16 +24,36 @@ command line:
 
 config file:
 ------------
+host=127.0.0.1
+port=5000
+
+# Matches all other hostnames
+hostname *
+homedir=/var/www/testsite
+alias latest=latest.html
+
+# Matches http://localhost
+hostname localhost
+homedir=/var/www/testsite
+
+# http://littlekitten.xyz
+hostname littlekitten.xyz
 homedir=/var/www/testsite
 cgidir=cgi-bin (relative to homedir)
-port=5000
-host=127.0.0.1
 alias latest=latest.html
 alias about=about.html
-cgialias guestbook=guestbook.pl
-cgialias blog=blog.pl
-proxypass newsboard.littlekitten.xyz=localhost:8001
-proxypass fortune2.littlekitten.xyz=localhost:8002
+alias guestbook=cgi-bin/guestbook.pl
+alias blog=cgi-bin/blog.pl
+
+# Redirect newsboard.littlekitten.xyz to localhost:8001 server
+hostname newsboard.littlekitten.xyz
+proxypass=localhost:8001
+
+hostname blog.littlekitten.xyz
+homedir=/var/www/blog
+cgidir=.
+alias latest=latest.pl
+alias login=login.pl
 
 
 python simplehttpserver returns the following:

@@ -461,6 +461,7 @@ void process_request(LKHttpServer *server, LKContext *ctx) {
     // Check if request header Host matches any proxy pass.
     char *host = lk_stringtable_get(ctx->req->headers, "Host");
     if (host != NULL) {
+        printf("host: '%s'\n", host);
         char *targethost = lk_stringtable_get(settings->proxypass, host);
         if (targethost != NULL) {
             serve_proxy(server, ctx, targethost);
