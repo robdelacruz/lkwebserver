@@ -55,6 +55,9 @@ cgidir=.
 alias latest=latest.pl
 alias login=login.pl
 
+cgi post docs:
+https://www.oreilly.com/library/view/cgi-programming-on/9781565921689/07_chapter-04.html
+
 
 python simplehttpserver returns the following:
 127.0.0.1 - - [11/Mar/2023 14:05:46] "GET /index3.html HTTP/1.1" 200 - 
