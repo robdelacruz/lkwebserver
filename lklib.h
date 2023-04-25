@@ -58,6 +58,7 @@ void lk_string_trim(LKString *lks);
 void lk_string_chop_start(LKString *lks, char *s);
 void lk_string_chop_end(LKString *lks, char *s);
 LKStringList *lk_string_split(LKString *lks, char *delim);
+void lk_string_split_assign(LKString *s, char *delim, LKString *k, LKString *v);
 
 
 /*** LKStringTable ***/

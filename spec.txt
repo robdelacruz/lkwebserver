@@ -47,7 +47,7 @@ alias blog=cgi-bin/blog.pl
 
 # Redirect newsboard.littlekitten.xyz to localhost:8001 server
 hostname newsboard.littlekitten.xyz
-proxypass=localhost:8001
+proxyhost=localhost:8001
 
 hostname blog.littlekitten.xyz
 homedir=/var/www/blog

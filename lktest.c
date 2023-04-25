@@ -5,17 +5,20 @@
 #include <errno.h>
 #include <assert.h>
 #include "lklib.h"
+#include "lknet.h"
 
 void lkstring_test();
 void lkstringmap_test();
 void lkbuffer_test();
 void lkstringlist_test();
+void lkconfig_test();
 
 int main(int argc, char *argv[]) {
     lkstring_test();
     lkstringmap_test();
     lkbuffer_test();
     lkstringlist_test();
+    lkconfig_test();
     return 0;
 }
 
@@ -427,6 +430,17 @@ void lkstringlist_test() {
     assert(!strcmp(s0->s, "Hello abc"));
 
     lk_stringlist_free(sl);
+    printf("Done.\n");
+}
+
+void lkconfig_test() {
+    printf("Running LKConfig tests... \n");
+
+    LKConfig *cfg = lk_read_configfile("lktest.conf");
+    assert(cfg != NULL);
+    lk_config_print(cfg);
+    lk_config_free(cfg);
+
     printf("Done.\n");
 }
 

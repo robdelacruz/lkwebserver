@@ -150,10 +150,18 @@ typedef struct {
 typedef struct {
     LKString *serverhost;
     LKString *port;
-    LKHostConfig *hostconfigs;
+    LKHostConfig **hostconfigs;
     size_t hostconfigs_len;
     size_t hostconfigs_size;
 } LKConfig;
+
+LKConfig *lk_read_configfile(char *configfile);
+void lk_config_free(LKConfig *cfg);
+void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc);
+void lk_config_print(LKConfig *cfg);
+
+LKHostConfig *lk_hostconfig_new(char *hostname);
+void lk_hostconfig_free(LKHostConfig *hc);
 
 
 /*** LKHttpServer ***/
