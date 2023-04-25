@@ -137,6 +137,25 @@ void remove_context(LKContext **pphead, int fd);
 LKContext *match_ctx(LKContext *phead, int fd);
 
 
+/*** LKConfig ***/
+typedef struct {
+    LKString *hostname;
+    LKString *homedir;
+    LKString *homedir_abspath;
+    LKString *cgidir;
+    LKStringTable *aliases;
+    LKString *proxyhost;
+} LKHostConfig;
+
+typedef struct {
+    LKString *serverhost;
+    LKString *port;
+    LKHostConfig *hostconfigs;
+    size_t hostconfigs_len;
+    size_t hostconfigs_size;
+} LKConfig;
+
+
 /*** LKHttpServer ***/
 typedef struct {
     LKString *homedir;
