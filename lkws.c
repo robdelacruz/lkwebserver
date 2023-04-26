@@ -66,7 +66,7 @@ void handle_sigchld(int sig) {
     errno = tmp_errno;
 }
 
-typedef enum {PA_NONE, PA_ALIAS, PA_PROXYPASS} ParseArgsState;
+typedef enum {PA_NONE, PA_ALIAS, PA_FILE} ParseArgsState;
 
 // lkws [homedir] [port] [host] [-a <alias1>=<path>]... [-p <hostname>=<targethost>]...
 // homedir = absolute or relative path to a home directory
@@ -92,8 +92,8 @@ void parse_args(int argc, char *argv[], LKHttpServer *server) {
             state = PA_ALIAS;
             continue;
         }
-        if (state == PA_NONE && !strcmp(arg, "-p")) {
-            state = PA_PROXYPASS;
+        if (state == PA_NONE && !strcmp(arg, "-f")) {
+            state = PA_FILE;
             continue;
         }
         // --cgidir=cgifolder
@@ -113,8 +113,10 @@ void parse_args(int argc, char *argv[], LKHttpServer *server) {
             state = PA_NONE;
             continue;
         }
-        if (state == PA_PROXYPASS) {
-            parse_args_proxypass(arg, server);
+        if (state == PA_FILE) {
+            LKConfig *cfg = lk_read_configfile(arg);
+            lk_config_print(cfg);
+            lk_config_free(cfg);
             state = PA_NONE;
             continue;
         }
