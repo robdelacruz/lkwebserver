@@ -155,8 +155,9 @@ typedef struct {
     size_t hostconfigs_size;
 } LKConfig;
 
-LKConfig *lk_read_configfile(char *configfile);
+LKConfig *lk_config_new();
 void lk_config_free(LKConfig *cfg);
+LKConfig *lk_read_configfile(char *configfile);
 void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc);
 void lk_config_print(LKConfig *cfg);
 

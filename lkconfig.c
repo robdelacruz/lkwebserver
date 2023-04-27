@@ -8,6 +8,35 @@
 #include "lknet.h"
 
 #define HOSTCONFIGS_INITIAL_SIZE 10
+
+LKConfig *lk_config_new() {
+    LKConfig *cfg = malloc(sizeof(LKConfig));
+    cfg->serverhost = lk_string_new("");
+    cfg->port = lk_string_new("");
+    cfg->hostconfigs = malloc(sizeof(LKHostConfig*) * HOSTCONFIGS_INITIAL_SIZE);
+    cfg->hostconfigs_len = 0;
+    cfg->hostconfigs_size = HOSTCONFIGS_INITIAL_SIZE;
+    return cfg;
+}
+
+void lk_config_free(LKConfig *cfg) {
+    lk_string_free(cfg->serverhost);
+    lk_string_free(cfg->port);
+    for (int i=0; i < cfg->hostconfigs_len; i++) {
+        LKHostConfig *hc = cfg->hostconfigs[i];
+        lk_hostconfig_free(hc);
+    }
+    memset(cfg->hostconfigs, 0, sizeof(LKHostConfig*) * cfg->hostconfigs_size);
+    free(cfg->hostconfigs);
+
+    cfg->serverhost = NULL;
+    cfg->port = NULL;
+    cfg->hostconfigs = NULL;
+    
+    free(cfg);
+}
+
+
 #define CONFIG_LINE_SIZE 255
 
 // Read config file and set config structure.
@@ -54,12 +83,7 @@ LKConfig *lk_read_configfile(char *configfile) {
         return NULL;
     }
 
-    LKConfig *cfg = malloc(sizeof(LKConfig));
-    cfg->serverhost = lk_string_new("");
-    cfg->port = lk_string_new("");
-    cfg->hostconfigs = malloc(sizeof(LKHostConfig*) * HOSTCONFIGS_INITIAL_SIZE);
-    cfg->hostconfigs_len = 0;
-    cfg->hostconfigs_size = HOSTCONFIGS_INITIAL_SIZE;
+    LKConfig *cfg = lk_config_new();
 
     char line[CONFIG_LINE_SIZE];
     ParseCfgState state = CFG_ROOT;
@@ -154,23 +178,6 @@ LKConfig *lk_read_configfile(char *configfile) {
 
     fclose(f);
     return cfg;
-}
-
-void lk_config_free(LKConfig *cfg) {
-    lk_string_free(cfg->serverhost);
-    lk_string_free(cfg->port);
-    for (int i=0; i < cfg->hostconfigs_len; i++) {
-        LKHostConfig *hc = cfg->hostconfigs[i];
-        lk_hostconfig_free(hc);
-    }
-    memset(cfg->hostconfigs, 0, sizeof(LKHostConfig*) * cfg->hostconfigs_size);
-    free(cfg->hostconfigs);
-
-    cfg->serverhost = NULL;
-    cfg->port = NULL;
-    cfg->hostconfigs = NULL;
-    
-    free(cfg);
 }
 
 void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc) {

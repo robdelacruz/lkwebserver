@@ -66,20 +66,24 @@ void handle_sigchld(int sig) {
     errno = tmp_errno;
 }
 
-typedef enum {PA_NONE, PA_ALIAS, PA_FILE} ParseArgsState;
+typedef enum {PA_NONE, PA_FILE} ParseArgsState;
 
-// lkws [homedir] [port] [host] [-a <alias1>=<path>]... [-p <hostname>=<targethost>]...
-// homedir = absolute or relative path to a home directory
-//           defaults to current working directory if not specified
-// port    = port number to bind to server
-//           defaults to 8000
-// host    = IP address to bind to server
-//           defaults to localhost
+// lkws [homedir] [port] [host] [--cgidir=<cgidir>] [-f <configfile>]
+// homedir    = absolute or relative path to a home directory
+//              defaults to current working directory if not specified
+// port       = port number to bind to server
+//              defaults to 8000
+// host       = IP address to bind to server
+//              defaults to localhost
+// cgidir     = root directory for cgi files, relative path to homedir
+//              defaults to cgi-bin
+// configfile = plaintext file containing configuration options
+//
 // Examples:
-// lkws ./testsite/ 8080 -a latest=latest.html -a about=about.html
-// lkws /var/www/testsite/ 8080 127.0.0.1 -a latest=folder/latest.html
-// lkws /var/www/testsite/ --cgidir=cgifolder
-// lkws /var/www/testsite/ -p littlekitten.xyz=localhost:5001
+// lkws ./testsite/ 8080
+// lkws /var/www/testsite/ 8080 127.0.0.1
+// lkws /var/www/testsite/ --cgidir=guestbook
+// lkws -f littlekitten.conf
 void parse_args(int argc, char *argv[], LKHttpServer *server) {
     ParseArgsState state = PA_NONE;
     int is_homedir_set = 0;
@@ -88,10 +92,6 @@ void parse_args(int argc, char *argv[], LKHttpServer *server) {
 
     for (int i=1; i < argc; i++) {
         char *arg = argv[i];
-        if (state == PA_NONE && !strcmp(arg, "-a")) {
-            state = PA_ALIAS;
-            continue;
-        }
         if (state == PA_NONE && !strcmp(arg, "-f")) {
             state = PA_FILE;
             continue;
@@ -106,11 +106,6 @@ void parse_args(int argc, char *argv[], LKHttpServer *server) {
             }
             lk_stringlist_free(parts);
             lk_string_free(lksarg);
-            continue;
-        }
-        if (state == PA_ALIAS) {
-            parse_args_alias(arg, server);
-            state = PA_NONE;
             continue;
         }
         if (state == PA_FILE) {
