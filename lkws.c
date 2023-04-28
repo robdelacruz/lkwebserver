@@ -20,9 +20,9 @@
 
 void handle_sigint(int sig);
 void handle_sigchld(int sig);
-void parse_args(int argc, char *argv[], LKHttpServer *server);
-void parse_args_alias(char *arg, LKHttpServer *server);
-void parse_args_proxypass(char *arg, LKHttpServer *server);
+void parse_args(int argc, char *argv[], LKConfig *cfg);
+//void parse_args_alias(char *arg, LKHttpServer *server);
+//void parse_args_proxypass(char *arg, LKHttpServer *server);
 
 // lkws [homedir] [port] [host] [-a <alias1>=<path>]...
 // homedir = absolute or relative path to a home directory
@@ -40,8 +40,9 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, handle_sigint);      // exit on CTRL-C
     signal(SIGCHLD, handle_sigchld);
 
-    LKHttpServer *httpserver = lk_httpserver_new();
-    parse_args(argc, argv, httpserver);
+    LKConfig *cfg = lk_config_new();
+    parse_args(argc, argv, cfg);
+    LKHttpServer *httpserver = lk_httpserver_new(cfg);
 
     int z = lk_httpserver_serve(httpserver);
     if (z == -1) {
@@ -84,11 +85,12 @@ typedef enum {PA_NONE, PA_FILE} ParseArgsState;
 // lkws /var/www/testsite/ 8080 127.0.0.1
 // lkws /var/www/testsite/ --cgidir=guestbook
 // lkws -f littlekitten.conf
-void parse_args(int argc, char *argv[], LKHttpServer *server) {
+void parse_args(int argc, char *argv[], LKConfig *cfg) {
     ParseArgsState state = PA_NONE;
     int is_homedir_set = 0;
     int is_port_set = 0;
     int is_host_set = 0;
+    LKHostConfig *default_hc = lk_config_create_get_hostconfig(cfg, "*");
 
     for (int i=1; i < argc; i++) {
         char *arg = argv[i];
@@ -98,18 +100,15 @@ void parse_args(int argc, char *argv[], LKHttpServer *server) {
         }
         // --cgidir=cgifolder
         if (state == PA_NONE && !strncmp(arg, "--cgidir=", 9)) {
-            LKString *lksarg = lk_string_new(arg);
-            LKStringList *parts = lk_string_split(lksarg, "=");
-            if (parts->items_len == 2) {
-                LKString *v = lk_stringlist_get(parts, 1);
-                lk_httpserver_setopt(server, LKHTTPSERVEROPT_CGIDIR, v->s);
-            }
-            lk_stringlist_free(parts);
-            lk_string_free(lksarg);
+            LKHostConfig *default_hc = lk_config_create_get_hostconfig(cfg, "*");
+            LKString *v = lk_string_new("");
+            sz_string_split_assign(arg, "=", NULL, v);
+            lk_string_assign(default_hc->cgidir, v->s);
+            lk_string_free(v);
             continue;
         }
         if (state == PA_FILE) {
-            LKConfig *cfg = lk_read_configfile(arg);
+            lk_config_read_configfile(cfg, arg);
             lk_config_print(cfg);
             lk_config_free(cfg);
             state = PA_NONE;
@@ -117,52 +116,15 @@ void parse_args(int argc, char *argv[], LKHttpServer *server) {
         }
         assert(state == PA_NONE);
         if (!is_homedir_set) {
-            lk_httpserver_setopt(server, LKHTTPSERVEROPT_HOMEDIR, arg);
+            lk_string_assign(default_hc->homedir, arg);
             is_homedir_set = 1;
         } else if (!is_port_set) {
-            lk_httpserver_setopt(server, LKHTTPSERVEROPT_PORT, arg);
+            lk_string_assign(cfg->port, arg);
             is_port_set = 1;
         } else if (!is_host_set) {
-            lk_httpserver_setopt(server, LKHTTPSERVEROPT_HOST, arg);
+            lk_string_assign(cfg->serverhost, arg);
             is_host_set = 1;
         }
     }
-}
-
-// Parse and add new alias definition into aliases
-// alias definition "/latest=/latest.html" ==> "/latest" : "/latest.html"
-void parse_args_alias(char *arg, LKHttpServer *server) {
-    LKString *lksarg = lk_string_new(arg);
-    LKStringList *parts = lk_string_split(lksarg, "=");
-    if (parts->items_len == 2) {
-        LKString *k = lk_stringlist_get(parts, 0);
-        LKString *v = lk_stringlist_get(parts, 1);
-
-        if (!lk_string_starts_with(k, "/")) {
-            lk_string_prepend(k, "/");
-        }
-        if (!lk_string_starts_with(v, "/")) {
-            lk_string_prepend(v, "/");
-        }
-        lk_httpserver_setopt(server, LKHTTPSERVEROPT_ALIAS, k->s, v->s);
-    }
-
-    lk_stringlist_free(parts);
-    lk_string_free(lksarg);
-}
-
-// Parse and add proxy pass assignments
-// proxy pass definition "littlekitten.xyz=localhost:5001" ==> "littlekitten.xyz" : "localhost:5001"
-void parse_args_proxypass(char *arg, LKHttpServer *server) {
-    LKString *lksarg = lk_string_new(arg);
-    LKStringList *parts = lk_string_split(lksarg, "=");
-    if (parts->items_len == 2) {
-        LKString *k = lk_stringlist_get(parts, 0);
-        LKString *v = lk_stringlist_get(parts, 1);
-        lk_httpserver_setopt(server, LKHTTPSERVEROPT_PROXYPASS, k->s, v->s);
-    }
-
-    lk_stringlist_free(parts);
-    lk_string_free(lksarg);
 }
 

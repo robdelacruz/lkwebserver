@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
@@ -28,20 +27,17 @@ void FD_SET_WRITE(int fd, LKHttpServer *server);
 void FD_CLR_READ(int fd, LKHttpServer *server);
 void FD_CLR_WRITE(int fd, LKHttpServer *server);
 
-LKHttpServerSettings *create_serversettings();
-void free_serversettings(LKHttpServerSettings *settings);
-void finalize_settings(LKHttpServerSettings *settings);
-
 void read_request(LKHttpServer *server, LKContext *ctx);
 void read_cgistream(LKHttpServer *server, LKContext *ctx);
 void process_request(LKHttpServer *server, LKContext *ctx);
 
-void serve_files(LKHttpServer *server, LKContext *ctx);
-void serve_cgi(LKHttpServer *server, LKContext *ctx);
+void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc);
+void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc);
 void process_response(LKHttpServer *server, LKContext *ctx);
+void process_error_response(LKHttpServer *server, LKContext *ctx, int status, char *msg);
 
 void set_cgi_env1(LKHttpServer *server);
-void set_cgi_env2(LKHttpServer *server, LKContext *ctx);
+void set_cgi_env2(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc);
 
 void get_localtime_string(char *time_str, size_t time_str_len);
 int open_path_file(char *home_dir, char *path);
@@ -60,15 +56,17 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx);
 
 /*** LKHttpServer functions ***/
 
-LKHttpServer *lk_httpserver_new() {
+LKHttpServer *lk_httpserver_new(LKConfig *cfg) {
     LKHttpServer *server = malloc(sizeof(LKHttpServer));
+    server->cfg = cfg;
     server->ctxhead = NULL;
-    server->settings = create_serversettings();
     server->maxfd = 0;
     return server;
 }
 
 void lk_httpserver_free(LKHttpServer *server) {
+    lk_config_free(server->cfg);
+
     // Free ctx linked list
     LKContext *ctx = server->ctxhead;
     while (ctx != NULL) {
@@ -77,102 +75,8 @@ void lk_httpserver_free(LKHttpServer *server) {
         free_context(ptmp);
     }
 
-    free_serversettings(server->settings);
     memset(server, 0, sizeof(LKHttpServer));
     free(server);
-}
-
-// Fill in default values for unspecified settings.
-void finalize_settings(LKHttpServerSettings *settings) {
-    // If home dir not specified, use current working directory.
-    if (settings->homedir->s_len == 0) {
-        char *current_dir = get_current_dir_name();
-        current_dir = NULL;
-        if (current_dir != NULL) {
-            lk_string_assign(settings->homedir, current_dir);
-            free(current_dir);
-        } else {
-            lk_string_assign(settings->homedir, ".");
-        }
-    }
-
-    char homedir_abspath[PATH_MAX];
-    char *pz = realpath(settings->homedir->s, homedir_abspath);
-    if (pz == NULL) {
-        lk_print_err("realpath()");
-        homedir_abspath[0] = '\0';
-    }
-    lk_string_assign(settings->homedir_abspath, homedir_abspath);
-
-    // cgidir defaults to cgi-bin if not specified.
-    if (settings->cgidir->s_len == 0) {
-        lk_string_assign(settings->cgidir, "/cgi-bin/");
-    }
-    // host defaults to localhost if not specified.
-    if (settings->host->s_len == 0) {
-        lk_string_assign(settings->host, "localhost");
-    }
-    // port defaults to 8000 if not specified.
-    if (settings->port->s_len == 0) {
-        lk_string_assign(settings->port, "8000");
-    }
-}
-
-void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...) {
-    char *homedir;
-    char *port;
-    char *host;
-    char *cgidir;
-    char *k, *v;
-    LKHttpServerSettings *settings = server->settings;
-
-    va_list args;
-    va_start(args, opt);
-
-    switch(opt) {
-    case LKHTTPSERVEROPT_HOMEDIR:
-        homedir = va_arg(args, char*);
-        lk_string_assign(settings->homedir, homedir);
-        lk_string_chop_end(settings->homedir, "/");
-        break;
-    case LKHTTPSERVEROPT_PORT:
-        port = va_arg(args, char*);
-        lk_string_assign(settings->port, port);
-        break;
-    case LKHTTPSERVEROPT_HOST:
-        host = va_arg(args, char*);
-        lk_string_assign(settings->host, host);
-        break;
-    case LKHTTPSERVEROPT_CGIDIR:
-        cgidir = va_arg(args, char*);
-        if (strlen(cgidir) == 0) {
-            break;
-        }
-        lk_string_assign(settings->cgidir, cgidir);
-
-        // Surround cgi dir with slashes: /cgi-bin/ for easy uri matching.
-        if (!lk_string_starts_with(settings->cgidir, "/")) {
-            lk_string_prepend(settings->cgidir, "/");
-        }
-        if (!lk_string_ends_with(settings->cgidir, "/")) {
-            lk_string_append(settings->cgidir, "/");
-        }
-        break;
-    case LKHTTPSERVEROPT_ALIAS:
-        k = va_arg(args, char*);
-        v = va_arg(args, char*);
-        lk_stringtable_set(settings->aliases, k, v);
-        break;
-    case LKHTTPSERVEROPT_PROXYPASS:
-        k = va_arg(args, char*);
-        v = va_arg(args, char*);
-        lk_stringtable_set(settings->proxypass, k, v);
-        break;
-    default:
-        break;
-    }
-
-    va_end(args);
 }
 
 void FD_SET_READ(int fd, LKHttpServer *server) {
@@ -196,19 +100,19 @@ void FD_CLR_WRITE(int fd, LKHttpServer *server) {
 
 int lk_httpserver_serve(LKHttpServer *server) {
     int z;
-    LKHttpServerSettings *settings = server->settings;
-    finalize_settings(settings);
+    LKConfig *cfg = server->cfg;
+    lk_config_finalize(cfg);
 
     int backlog = 50;
     struct sockaddr sa;
-    int s0 = lk_open_listen_socket(settings->host->s, settings->port->s, backlog, &sa);
+    int s0 = lk_open_listen_socket(cfg->serverhost->s, cfg->port->s, backlog, &sa);
     if (s0 == -1) {
         lk_print_err("lk_open_listen_socket() failed");
         return -1;
     }
 
     LKString *server_ipaddr_str = lk_get_ipaddr_string(&sa);
-    printf("Serving HTTP on %s port %s...\n", server_ipaddr_str->s, settings->port->s);
+    printf("Serving HTTP on %s port %s...\n", server_ipaddr_str->s, cfg->port->s);
     lk_string_free(server_ipaddr_str);
 
     clearenv();
@@ -308,7 +212,7 @@ int lk_httpserver_serve(LKHttpServer *server) {
 // Sets the cgi environment variables that stay the same across http requests.
 void set_cgi_env1(LKHttpServer *server) {
     int z;
-    LKHttpServerSettings *settings = server->settings;
+    LKConfig *cfg = server->cfg;
 
     char hostname[LK_BUFSIZE_SMALL];
     z = gethostname(hostname, sizeof(hostname)-1);
@@ -320,18 +224,16 @@ void set_cgi_env1(LKHttpServer *server) {
     
     setenv("SERVER_NAME", hostname, 1);
     setenv("SERVER_SOFTWARE", "littlekitten/0.1", 1);
-    setenv("DOCUMENT_ROOT", settings->homedir_abspath->s, 1);
     setenv("SERVER_PROTOCOL", "HTTP/1.0", 1);
-
-    char *server_port = "todo";
-    setenv("SERVER_PORT", server_port, 1);
+    setenv("SERVER_PORT", cfg->port->s, 1);
 
 }
 
 // Sets the cgi environment variables that vary for each http request.
-void set_cgi_env2(LKHttpServer *server, LKContext *ctx) {
+void set_cgi_env2(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     LKHttpRequest *req = ctx->req;
-    LKHttpServerSettings *settings = server->settings;
+
+    setenv("DOCUMENT_ROOT", hc->homedir_abspath->s, 1);
 
     char *http_user_agent = lk_stringtable_get(req->headers, "User-Agent");
     if (!http_user_agent) http_user_agent = "";
@@ -341,7 +243,7 @@ void set_cgi_env2(LKHttpServer *server, LKContext *ctx) {
     if (!http_host) http_host = "";
     setenv("HTTP_HOST", http_host, 1);
 
-    LKString *lkscript_filename = lk_string_new(settings->homedir_abspath->s);
+    LKString *lkscript_filename = lk_string_new(hc->homedir_abspath->s);
     lk_string_append(lkscript_filename, req->path->s);
     setenv("SCRIPT_FILENAME", lkscript_filename->s, 1);
     lk_string_free(lkscript_filename);
@@ -351,6 +253,7 @@ void set_cgi_env2(LKHttpServer *server, LKContext *ctx) {
     setenv("REQUEST_URI", req->uri->s, 1);
     setenv("QUERY_STRING", req->querystring->s, 1);
 
+    //$$ todo
     char *content_type = "";
     char *content_length = "";
     setenv("CONTENT_TYPE", content_type, 1);
@@ -456,38 +359,38 @@ void read_cgistream(LKHttpServer *server, LKContext *ctx) {
 }
 
 void process_request(LKHttpServer *server, LKContext *ctx) {
-    LKHttpServerSettings *settings = server->settings;
+    char *hostname = lk_stringtable_get(ctx->req->headers, "Host");
+    LKHostConfig *hc = lk_config_match_hostconfig(server->cfg, hostname);
+    if (hc == NULL) {
+        process_error_response(server, ctx, 500, "Server error: hostconfig not found.");
+        return;
+    }
 
-    // Check if request header Host matches any proxy pass.
-    char *host = lk_stringtable_get(ctx->req->headers, "Host");
-    if (host != NULL) {
-        printf("host: '%s'\n", host);
-        char *targethost = lk_stringtable_get(settings->proxypass, host);
-        if (targethost != NULL) {
-            serve_proxy(server, ctx, targethost);
-            return;
-        }
+    // Forward request to proxyhost if proxyhost specified.
+    if (hc->proxyhost->s_len > 0) {
+        serve_proxy(server, ctx, hc->proxyhost->s);
+        return;
     }
 
     // Replace path with any matching alias.
-    char *match = lk_stringtable_get(server->settings->aliases, ctx->req->path->s);
+    char *match = lk_stringtable_get(hc->aliases, ctx->req->path->s);
     if (match != NULL) {
         lk_string_assign(ctx->req->path, match);
     }
 
     // Run cgi script if uri falls under cgidir
-    if (lk_string_starts_with(ctx->req->uri, server->settings->cgidir->s)) {
-        serve_cgi(server, ctx);
+    if (lk_string_starts_with(ctx->req->uri, hc->cgidir->s)) {
+        serve_cgi(server, ctx, hc);
         return;
     }
 
-    serve_files(server, ctx);
+    serve_files(server, ctx, hc);
     process_response(server, ctx);
 }
 
 // Generate an http response to an http request.
 #define POSTTEST
-void serve_files(LKHttpServer *server, LKContext *ctx) {
+void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     int z;
     static char *html_error_start = 
        "<!DOCTYPE html>\n"
@@ -505,7 +408,6 @@ void serve_files(LKHttpServer *server, LKContext *ctx) {
        "<p>Hello Little Kitten!</p>\n"
        "</body></html>\n";
 
-    LKHttpServerSettings *settings = server->settings;
     LKHttpRequest *req = ctx->req;
     LKHttpResponse *resp = ctx->resp;
     char *method = req->method->s;
@@ -523,14 +425,14 @@ void serve_files(LKHttpServer *server, LKContext *ctx) {
         if (!strcmp(path, "")) {
             char *default_files[] = {"/index.html", "/index.htm", "/default.html", "/default.htm"};
             for (int i=0; i < sizeof(default_files) / sizeof(char *); i++) {
-                z = read_path_file(settings->homedir->s, default_files[i], resp->body);
+                z = read_path_file(hc->homedir->s, default_files[i], resp->body);
                 if (z >= 0) {
                     lk_httpresponse_add_header(resp, "Content-Type", "text/html");
                     break;
                 }
             }
         } else {
-            z = read_path_file(settings->homedir->s, path, resp->body);
+            z = read_path_file(hc->homedir->s, path, resp->body);
             char *content_type = (char *) lk_lookup(mimetypes_tbl, fileext(path));
             if (content_type == NULL) {
                 content_type = "text/plain";
@@ -576,13 +478,12 @@ void serve_files(LKHttpServer *server, LKContext *ctx) {
     lk_buffer_append(resp->body, html_error_end, strlen(html_error_end));
 }
 
-void serve_cgi(LKHttpServer *server, LKContext *ctx) {
-    LKHttpServerSettings *settings = server->settings;
+void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     LKHttpRequest *req = ctx->req;
     LKHttpResponse *resp = ctx->resp;
     char *path = req->path->s;
 
-    LKString *cgifile = lk_string_new(settings->homedir->s);
+    LKString *cgifile = lk_string_new(hc->homedir->s);
     lk_string_append(cgifile, req->path->s);
 
     // cgi file not found
@@ -598,7 +499,7 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx) {
         return;
     }
 
-    set_cgi_env2(server, ctx);
+    set_cgi_env2(server, ctx, hc);
 
     int fd_in, fd_out, fd_err;
     int z = lk_popen3(cgifile->s, &fd_in, &fd_out, &fd_err);
@@ -646,6 +547,16 @@ void process_response(LKHttpServer *server, LKContext *ctx) {
     ctx->type = CTX_WRITE_RESP;
     FD_SET_WRITE(ctx->selectfd, server);
     return;
+}
+
+void process_error_response(LKHttpServer *server, LKContext *ctx, int status, char *msg) {
+    LKHttpResponse *resp = ctx->resp;
+    resp->status = status;
+    lk_string_assign(resp->statustext, msg);
+    lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
+    lk_buffer_append_sz(resp->body, msg);
+
+    process_response(server, ctx);
 }
 
 // Open <home_dir>/<uri> file in nonblocking mode.
@@ -877,34 +788,3 @@ void terminate_client_session(LKHttpServer *server, LKContext *ctx) {
     remove_context(&server->ctxhead, ctx->selectfd);
 }
 
-/*** LKHttpServerSettings functions ***/
-LKHttpServerSettings *create_serversettings() {
-    LKHttpServerSettings *settings = malloc(sizeof(LKHttpServerSettings));
-    settings->homedir = lk_string_new("");
-    settings->homedir_abspath = lk_string_new("");
-    settings->host = lk_string_new("");
-    settings->port = lk_string_new("");
-    settings->cgidir = lk_string_new("");
-    settings->aliases = lk_stringtable_new();
-    settings->proxypass = lk_stringtable_new();
-    return settings;
-}
-
-void free_serversettings(LKHttpServerSettings *settings) {
-    lk_string_free(settings->homedir);
-    lk_string_free(settings->homedir_abspath);
-    lk_string_free(settings->host);
-    lk_string_free(settings->port);
-    lk_string_free(settings->cgidir);
-    lk_stringtable_free(settings->aliases);
-    lk_stringtable_free(settings->proxypass);
-
-    settings->homedir = NULL;
-    settings->homedir_abspath = NULL;
-    settings->host = NULL;
-    settings->port = NULL;
-    settings->cgidir = NULL;
-    settings->aliases = NULL;
-    settings->proxypass = NULL;
-    free(settings);
-}

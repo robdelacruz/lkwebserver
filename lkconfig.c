@@ -1,9 +1,11 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
+#include <limits.h>
 #include "lklib.h"
 #include "lknet.h"
 
@@ -76,14 +78,12 @@ void lk_config_free(LKConfig *cfg) {
 // is read, indicating the start of the next host config section.
 //
 typedef enum {CFG_ROOT, CFG_HOSTSECTION} ParseCfgState;
-LKConfig *lk_read_configfile(char *configfile) {
+int lk_config_read_configfile(LKConfig *cfg, char *configfile) {
     FILE *f = fopen(configfile, "r");
     if (f == NULL) {
         lk_print_err("lk_read_configfile fopen()");
-        return NULL;
+        return -1;
     }
-
-    LKConfig *cfg = lk_config_new();
 
     char line[CONFIG_LINE_SIZE];
     ParseCfgState state = CFG_ROOT;
@@ -110,13 +110,8 @@ LKConfig *lk_read_configfile(char *configfile) {
         // hostname littlekitten.xyz
         lk_string_split_assign(l, " ", k, v); // l:"k v", assign k and v
         if (lk_string_sz_equal(k, "hostname")) {
-            // Add previous hostconfig section
-            if (hc != NULL) {
-                lk_config_add_hostconfig(cfg, hc);
-                hc = NULL;
-            }
-
-            hc = lk_hostconfig_new(v->s);
+            // hostname littlekitten.xyz
+            hc = lk_config_create_get_hostconfig(cfg, v->s);
             state = CFG_HOSTSECTION;
             continue;
         }
@@ -157,17 +152,17 @@ LKConfig *lk_read_configfile(char *configfile) {
             lk_string_split_assign(l, " ", k, v);
             if (lk_string_sz_equal(k, "alias")) {
                 lk_string_split_assign(v, "=", aliask, aliasv);
+                if (!lk_string_starts_with(aliask, "/")) {
+                    lk_string_prepend(aliask, "/");
+                }
+                if (!lk_string_starts_with(aliasv, "/")) {
+                    lk_string_prepend(aliasv, "/");
+                }
                 lk_stringtable_set(hc->aliases, aliask->s, aliasv->s);
                 continue;
             }
             continue;
         }
-    }
-
-    // Add last hostconfig section
-    if (hc != NULL) {
-        lk_config_add_hostconfig(cfg, hc);
-        hc = NULL;
     }
 
     lk_string_free(l);
@@ -177,7 +172,7 @@ LKConfig *lk_read_configfile(char *configfile) {
     lk_string_free(aliasv);
 
     fclose(f);
-    return cfg;
+    return 0;
 }
 
 void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc) {
@@ -190,6 +185,50 @@ void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc) {
     }
     cfg->hostconfigs[cfg->hostconfigs_len] = hc;
     cfg->hostconfigs_len++;
+}
+
+// Return hostconfig matching hostname,
+// or if hostname parameter is NULL, return hostconfig matching "*".
+// Return NULL if no matching hostconfig.
+LKHostConfig *lk_config_match_hostconfig(LKConfig *cfg, char *hostname) {
+    if (hostname != NULL) {
+        for (int i=0; i < cfg->hostconfigs_len; i++) {
+            LKHostConfig *hc = cfg->hostconfigs[i];
+            if (lk_string_sz_equal(hc->hostname, hostname)) {
+                return hc;
+            }
+        }
+    }
+    // If hostname not found, return hostname * (fallthrough hostname).
+    for (int i=0; i < cfg->hostconfigs_len; i++) {
+        LKHostConfig *hc = cfg->hostconfigs[i];
+        if (lk_string_sz_equal(hc->hostname, "*")) {
+            return hc;
+        }
+    }
+    return NULL;
+}
+
+// Return hostconfig with hostname or NULL if not found.
+LKHostConfig *get_hostconfig(LKConfig *cfg, char *hostname) {
+    for (int i=0; i < cfg->hostconfigs_len; i++) {
+        LKHostConfig *hc = cfg->hostconfigs[i];
+        if (lk_string_sz_equal(hc->hostname, hostname)) {
+            return hc;
+        }
+    }
+    return NULL;
+}
+
+// Return hostconfig with hostname if it exists.
+// Create new hostconfig with hostname if not found. Never returns null.
+LKHostConfig *lk_config_create_get_hostconfig(LKConfig *cfg, char *hostname) {
+    LKHostConfig *hc = get_hostconfig(cfg, hostname);
+    if (hc == NULL) {
+        hc = lk_hostconfig_new(hostname);
+        lk_config_add_hostconfig(cfg, hc);
+    }
+    return hc;
 }
 
 void lk_config_print(LKConfig *cfg) {
@@ -214,6 +253,59 @@ void lk_config_print(LKConfig *cfg) {
     }
     printf("\n");
 }
+
+// Fill in default values for unspecified settings.
+void lk_config_finalize(LKConfig *cfg) {
+    // serverhost defaults to localhost if not specified.
+    if (cfg->serverhost->s_len == 0) {
+        lk_string_assign(cfg->serverhost, "localhost");
+    }
+    // port defaults to 8000 if not specified.
+    if (cfg->port->s_len == 0) {
+        lk_string_assign(cfg->port, "8000");
+    }
+
+    LKString *current_dir = lk_string_new("");
+    char *s = get_current_dir_name();
+    if (s != NULL) {
+        lk_string_assign(current_dir, s);
+        free(s);
+    } else {
+        lk_string_assign(current_dir, ".");
+    }
+
+    // Use current directory if default homedir not set.
+    LKHostConfig *hc = lk_config_create_get_hostconfig(cfg, "*");
+    if (hc->homedir->s_len == 0) {
+        lk_string_assign(hc->homedir, current_dir->s);
+    }
+
+    char homedir_abspath[PATH_MAX];
+    for (int i=0; i < cfg->hostconfigs_len; i++) {
+        LKHostConfig *hc = cfg->hostconfigs[i];
+
+        // Skip hostconfigs that don't have have homedir.
+        if (hc->homedir->s_len == 0) {
+            continue;
+        }
+
+        // Set absolute path to homedir
+        char *pz = realpath(hc->homedir->s, homedir_abspath);
+        if (pz == NULL) {
+            lk_print_err("realpath()");
+            homedir_abspath[0] = '\0';
+        }
+        lk_string_assign(hc->homedir_abspath, homedir_abspath);
+
+        // cgidir defaults to cgi-bin if not specified.
+        if (hc->cgidir->s_len == 0) {
+            lk_string_assign(hc->cgidir, "/cgi-bin/");
+        }
+    }
+
+    lk_string_free(current_dir);
+}
+
 
 LKHostConfig *lk_hostconfig_new(char *hostname) {
     LKHostConfig *hc = malloc(sizeof(LKHostConfig));

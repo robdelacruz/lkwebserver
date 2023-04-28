@@ -157,28 +157,20 @@ typedef struct {
 
 LKConfig *lk_config_new();
 void lk_config_free(LKConfig *cfg);
-LKConfig *lk_read_configfile(char *configfile);
-void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc);
+int lk_config_read_configfile(LKConfig *cfg, char *configfile);
 void lk_config_print(LKConfig *cfg);
+void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc);
+LKHostConfig *lk_config_match_hostconfig(LKConfig *cfg, char *hostname);
+LKHostConfig *lk_config_create_get_hostconfig(LKConfig *cfg, char *hostname);
+void lk_config_finalize(LKConfig *cfg);
 
 LKHostConfig *lk_hostconfig_new(char *hostname);
 void lk_hostconfig_free(LKHostConfig *hc);
 
 
-/*** LKHttpServer ***/
 typedef struct {
-    LKString *homedir;
-    LKString *homedir_abspath;
-    LKString *host;
-    LKString *port;
-    LKString *cgidir;
-    LKStringTable *aliases;
-    LKStringTable *proxypass;
-} LKHttpServerSettings;
-
-typedef struct {
+    LKConfig *cfg;
     LKContext *ctxhead;
-    LKHttpServerSettings *settings;
     fd_set readfds;
     fd_set writefds;
     int maxfd;
@@ -193,7 +185,7 @@ typedef enum {
     LKHTTPSERVEROPT_PROXYPASS
 } LKHttpServerOpt;
 
-LKHttpServer *lk_httpserver_new();
+LKHttpServer *lk_httpserver_new(LKConfig *cfg);
 void lk_httpserver_free(LKHttpServer *server);
 void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...);
 int lk_httpserver_serve(LKHttpServer *server);

@@ -292,12 +292,22 @@ LKStringList *lk_string_split(LKString *lks, char *delim) {
 // Given a "k<delim>v" string, assign k and v.
 void lk_string_split_assign(LKString *s, char *delim, LKString *k, LKString *v) {
     LKStringList *ss = lk_string_split(s, delim);
-    lk_string_assign(k, ss->items[0]->s);
-    if (ss->items_len >= 2) {
-        lk_string_assign(v, ss->items[1]->s);
-    } else {
-        lk_string_assign(v, "");
+    if (k != NULL) {
+        lk_string_assign(k, ss->items[0]->s);
+    }
+    if (v != NULL) {
+        if (ss->items_len >= 2) {
+            lk_string_assign(v, ss->items[1]->s);
+        } else {
+            lk_string_assign(v, "");
+        }
     }
     lk_stringlist_free(ss);
+}
+
+void sz_string_split_assign(char *s, char *delim, LKString *k, LKString *v) {
+    LKString *lks = lk_string_new(s);
+    lk_string_split_assign(lks, delim, k, v);
+    lk_string_free(lks);
 }
 

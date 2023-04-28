@@ -436,7 +436,8 @@ void lkstringlist_test() {
 void lkconfig_test() {
     printf("Running LKConfig tests... \n");
 
-    LKConfig *cfg = lk_read_configfile("lktest.conf");
+    LKConfig *cfg = lk_config_new();
+    lk_config_read_configfile(cfg, "lktest.conf");
     assert(cfg != NULL);
     lk_config_print(cfg);
     lk_config_free(cfg);
