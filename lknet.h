@@ -159,8 +159,8 @@ LKConfig *lk_config_new();
 void lk_config_free(LKConfig *cfg);
 int lk_config_read_configfile(LKConfig *cfg, char *configfile);
 void lk_config_print(LKConfig *cfg);
-void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc);
-LKHostConfig *lk_config_match_hostconfig(LKConfig *cfg, char *hostname);
+LKHostConfig *lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc);
+LKHostConfig *lk_config_find_hostconfig(LKConfig *cfg, char *hostname);
 LKHostConfig *lk_config_create_get_hostconfig(LKConfig *cfg, char *hostname);
 void lk_config_finalize(LKConfig *cfg);
 

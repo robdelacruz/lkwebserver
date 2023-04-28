@@ -360,15 +360,20 @@ void read_cgistream(LKHttpServer *server, LKContext *ctx) {
 
 void process_request(LKHttpServer *server, LKContext *ctx) {
     char *hostname = lk_stringtable_get(ctx->req->headers, "Host");
-    LKHostConfig *hc = lk_config_match_hostconfig(server->cfg, hostname);
+    LKHostConfig *hc = lk_config_find_hostconfig(server->cfg, hostname);
     if (hc == NULL) {
-        process_error_response(server, ctx, 500, "Server error: hostconfig not found.");
+        process_error_response(server, ctx, 404, "LittleKitten webserver: hostconfig not found.");
         return;
     }
 
     // Forward request to proxyhost if proxyhost specified.
     if (hc->proxyhost->s_len > 0) {
         serve_proxy(server, ctx, hc->proxyhost->s);
+        return;
+    }
+
+    if (hc->homedir->s_len == 0) {
+        process_error_response(server, ctx, 404, "LittleKitten webserver: hostconfig homedir not specified.");
         return;
     }
 
@@ -379,7 +384,7 @@ void process_request(LKHttpServer *server, LKContext *ctx) {
     }
 
     // Run cgi script if uri falls under cgidir
-    if (lk_string_starts_with(ctx->req->uri, hc->cgidir->s)) {
+    if (hc->cgidir->s_len > 0 && lk_string_starts_with(ctx->req->uri, hc->cgidir->s)) {
         serve_cgi(server, ctx, hc);
         return;
     }
@@ -400,29 +405,14 @@ void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     static char *html_error_end =
        "</body></html>\n";
 
-    static char *html_sample =
-       "<!DOCTYPE html>\n"
-       "<html>\n"
-       "<head><title>Little Kitten</title></head>\n"
-       "<body><h1>Little Kitten webserver</h1>\n"
-       "<p>Hello Little Kitten!</p>\n"
-       "</body></html>\n";
-
     LKHttpRequest *req = ctx->req;
     LKHttpResponse *resp = ctx->resp;
     char *method = req->method->s;
-    char *path = req->path->s;
+    LKString *path = req->path;
 
     if (!strcmp(method, "GET")) {
-        // /littlekitten sample page
-        if (!strcmp(path, "/littlekitten")) {
-            lk_httpresponse_add_header(resp, "Content-Type", "text/html");
-            lk_buffer_append(resp->body, html_sample, strlen(html_sample));
-            return;
-        }
-
         // For root, default to index.html, ...
-        if (!strcmp(path, "")) {
+        if (!strcmp(path->s, "")) {
             char *default_files[] = {"/index.html", "/index.htm", "/default.html", "/default.htm"};
             for (int i=0; i < sizeof(default_files) / sizeof(char *); i++) {
                 z = read_path_file(hc->homedir->s, default_files[i], resp->body);
@@ -430,10 +420,12 @@ void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
                     lk_httpresponse_add_header(resp, "Content-Type", "text/html");
                     break;
                 }
+                // Update path with default file for File not found error message.
+                lk_string_assign(path, default_files[i]);
             }
         } else {
-            z = read_path_file(hc->homedir->s, path, resp->body);
-            char *content_type = (char *) lk_lookup(mimetypes_tbl, fileext(path));
+            z = read_path_file(hc->homedir->s, path->s, resp->body);
+            char *content_type = (char *) lk_lookup(mimetypes_tbl, fileext(path->s));
             if (content_type == NULL) {
                 content_type = "text/plain";
             }
@@ -442,9 +434,9 @@ void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
         if (z == -1) {
             // path not found
             resp->status = 404;
-            lk_string_assign_sprintf(resp->statustext, "File not found '%s'", path);
+            lk_string_assign_sprintf(resp->statustext, "File not found '%s'", path->s);
             lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
-            lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", path);
+            lk_buffer_append_sprintf(resp->body, "File not found '%s'\n", path->s);
         }
         return;
     }

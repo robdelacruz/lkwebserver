@@ -175,7 +175,7 @@ int lk_config_read_configfile(LKConfig *cfg, char *configfile) {
     return 0;
 }
 
-void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc) {
+LKHostConfig *lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc) {
     assert(cfg->hostconfigs_len <= cfg->hostconfigs_size);
 
     // Increase size if no more space.
@@ -185,12 +185,14 @@ void lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc) {
     }
     cfg->hostconfigs[cfg->hostconfigs_len] = hc;
     cfg->hostconfigs_len++;
+
+    return hc;
 }
 
 // Return hostconfig matching hostname,
 // or if hostname parameter is NULL, return hostconfig matching "*".
 // Return NULL if no matching hostconfig.
-LKHostConfig *lk_config_match_hostconfig(LKConfig *cfg, char *hostname) {
+LKHostConfig *lk_config_find_hostconfig(LKConfig *cfg, char *hostname) {
     if (hostname != NULL) {
         for (int i=0; i < cfg->hostconfigs_len; i++) {
             LKHostConfig *hc = cfg->hostconfigs[i];
@@ -265,6 +267,7 @@ void lk_config_finalize(LKConfig *cfg) {
         lk_string_assign(cfg->port, "8000");
     }
 
+    // Get current working directory.
     LKString *current_dir = lk_string_new("");
     char *s = get_current_dir_name();
     if (s != NULL) {
@@ -274,12 +277,24 @@ void lk_config_finalize(LKConfig *cfg) {
         lk_string_assign(current_dir, ".");
     }
 
-    // Use current directory if default homedir not set.
-    LKHostConfig *hc = lk_config_create_get_hostconfig(cfg, "*");
-    if (hc->homedir->s_len == 0) {
-        lk_string_assign(hc->homedir, current_dir->s);
+    // Set fallthrough defaults only if no other hostconfigs specified
+    // Note: If other hostconfigs are set, such as in a config file,
+    // the fallthrough '*' hostconfig should be set explicitly. 
+    if (cfg->hostconfigs_len == 0) {
+        // Set homedir to current directory if no other hostconfigs.
+        LKHostConfig *hc = lk_config_create_get_hostconfig(cfg, "*");
+        if (hc->homedir->s_len == 0) {
+            lk_string_assign(hc->homedir, current_dir->s);
+        }
+
+        // Set cgidir to cgi-bin if not specified.
+        if (hc->cgidir->s_len == 0) {
+            lk_string_assign(hc->cgidir, "/cgi-bin/");
+        }
     }
 
+    // Set homedir absolute paths for hostconfigs.
+    // Adjust /cgi-bin/ paths.
     char homedir_abspath[PATH_MAX];
     for (int i=0; i < cfg->hostconfigs_len; i++) {
         LKHostConfig *hc = cfg->hostconfigs[i];
@@ -297,9 +312,14 @@ void lk_config_finalize(LKConfig *cfg) {
         }
         lk_string_assign(hc->homedir_abspath, homedir_abspath);
 
-        // cgidir defaults to cgi-bin if not specified.
-        if (hc->cgidir->s_len == 0) {
-            lk_string_assign(hc->cgidir, "/cgi-bin/");
+        // Adjust cgidir paths.
+        if (hc->cgidir->s_len > 0) {
+            if (!lk_string_starts_with(hc->cgidir, "/")) {
+                lk_string_prepend(hc->cgidir, "/");
+            }
+            if (!lk_string_ends_with(hc->cgidir, "/")) {
+                lk_string_append(hc->cgidir, "/");
+            }
         }
     }
 

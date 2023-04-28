@@ -21,8 +21,6 @@
 void handle_sigint(int sig);
 void handle_sigchld(int sig);
 void parse_args(int argc, char *argv[], LKConfig *cfg);
-//void parse_args_alias(char *arg, LKHttpServer *server);
-//void parse_args_proxypass(char *arg, LKHttpServer *server);
 
 // lkws [homedir] [port] [host] [-a <alias1>=<path>]...
 // homedir = absolute or relative path to a home directory
@@ -90,7 +88,6 @@ void parse_args(int argc, char *argv[], LKConfig *cfg) {
     int is_homedir_set = 0;
     int is_port_set = 0;
     int is_host_set = 0;
-    LKHostConfig *default_hc = lk_config_create_get_hostconfig(cfg, "*");
 
     for (int i=1; i < argc; i++) {
         char *arg = argv[i];
@@ -109,13 +106,12 @@ void parse_args(int argc, char *argv[], LKConfig *cfg) {
         }
         if (state == PA_FILE) {
             lk_config_read_configfile(cfg, arg);
-            lk_config_print(cfg);
-            lk_config_free(cfg);
             state = PA_NONE;
             continue;
         }
         assert(state == PA_NONE);
         if (!is_homedir_set) {
+            LKHostConfig *default_hc = lk_config_create_get_hostconfig(cfg, "*");
             lk_string_assign(default_hc->homedir, arg);
             is_homedir_set = 1;
         } else if (!is_port_set) {
