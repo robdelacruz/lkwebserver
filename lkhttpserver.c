@@ -253,10 +253,15 @@ void set_cgi_env2(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     setenv("REQUEST_URI", req->uri->s, 1);
     setenv("QUERY_STRING", req->querystring->s, 1);
 
-    //$$ todo
-    char *content_type = "";
-    char *content_length = "";
+    char *content_type = lk_stringtable_get(req->headers, "Content-Type");
+    if (content_type == NULL) {
+        content_type = "";
+    }
     setenv("CONTENT_TYPE", content_type, 1);
+
+    char content_length[10];
+    snprintf(content_length, sizeof(content_length), "%ld", req->body->bytes_len);
+    content_length[sizeof(content_length)-1] = '\0';
     setenv("CONTENT_LENGTH", content_length, 1);
 
     setenv("REMOTE_ADDR", ctx->client_ipaddr->s, 1);
@@ -493,8 +498,8 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
 
     set_cgi_env2(server, ctx, hc);
 
-    int fd_in, fd_out, fd_err;
-    int z = lk_popen3(cgifile->s, &fd_in, &fd_out, &fd_err);
+    int fd_in, fd_out;
+    int z = lk_popen(cgifile->s, &fd_in, &fd_out);
     lk_string_free(cgifile);
     if (z == -1) {
         resp->status = 500;
@@ -506,10 +511,8 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     }
 
     close(fd_in);
-    close(fd_err);
 
     // Read cgi output in select()
-    //$$ fd_err should also be output so we can debug cgi errors?
     ctx->selectfd = fd_out;
     ctx->type = CTX_READ_CGI;
     ctx->cgibuf = lk_buffer_new(0);

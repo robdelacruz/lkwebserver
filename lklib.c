@@ -7,7 +7,7 @@
 #include "lklib.h"
 
 // forward declarations
-void close_pipes(int pair1[2], int pair2[2], int pair3[2]);
+void close_pipes(int pair1[2], int pair2[2]);
 
 // Print the last error message corresponding to errno.
 void lk_print_err(char *s) {
@@ -19,12 +19,11 @@ void lk_exit_err(char *s) {
     exit(1);
 }
 
-// Like popen() but with in, out, and err fd's.
-int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err) {
+// Like popen() but returning input and output fds for cmd.
+int lk_popen(char *cmd, int *fd_in, int *fd_out) {
     int z;
     int in[2] = {0, 0};
     int out[2] = {0, 0};
-    int err[2] = {0, 0};
 
     z = pipe(in);
     if (z == -1) {
@@ -32,12 +31,7 @@ int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err) {
     }
     z = pipe(out);
     if (z == -1) {
-        close_pipes(in, out, err);
-        return z;
-    }
-    z = pipe(err);
-    if (z == -1) {
-        close_pipes(in, out, err);
+        close_pipes(in, out);
         return z;
     }
 
@@ -46,21 +40,22 @@ int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err) {
         // child proc
         z = dup2(in[0], STDIN_FILENO);
         if (z == -1) {
-            close_pipes(in, out, err);
+            close_pipes(in, out);
             return z;
         }
+        // stdout and stderr get redirected to same output fd.
         z = dup2(out[1], STDOUT_FILENO);
         if (z == -1) {
-            close_pipes(in, out, err);
+            close_pipes(in, out);
             return z;
         }
-        z = dup2(err[1], STDERR_FILENO);
+        z = dup2(out[1], STDERR_FILENO);
         if (z == -1) {
-            close_pipes(in, out, err);
+            close_pipes(in, out);
             return z;
         }
 
-        close_pipes(in, out, err);
+        close_pipes(in, out);
         z = execl("/bin/sh", "sh",  "-c", cmd, NULL);
         return z;
     }
@@ -76,32 +71,35 @@ int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err) {
     }
     close(out[1]);
 
-    if (fd_err != NULL) {
-        *fd_err = err[0];
-    }
-    close(err[1]);
     return 0;
 }
 
-void close_pipes(int pair1[2], int pair2[2], int pair3[2]) {
+void close_pipes(int pair1[2], int pair2[2]) {
+    int z;
     int tmp_errno = errno;
     if (pair1[0] != 0) {
-        close(pair1[0]);
+        z = close(pair1[0]);
+        if (z == 0) {
+            pair1[0] = 0;
+        }
     }
     if (pair1[1] != 0) {
-        close(pair1[1]);
+        z = close(pair1[1]);
+        if (z == 0) {
+            pair1[1] = 0;
+        }
     }
     if (pair2[0] != 0) {
-        close(pair2[0]);
+        z = close(pair2[0]);
+        if (z == 0) {
+            pair2[0] = 0;
+        }
     }
     if (pair2[1] != 0) {
-        close(pair2[1]);
-    }
-    if (pair3[0] != 0) {
-        close(pair3[0]);
-    }
-    if (pair3[1] != 0) {
-        close(pair3[1]);
+        z = close(pair2[1]);
+        if (z == 0) {
+            pair2[1] = 0;
+        }
     }
     errno = tmp_errno;
     return;
