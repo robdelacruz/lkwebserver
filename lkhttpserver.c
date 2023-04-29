@@ -400,7 +400,7 @@ void process_request(LKHttpServer *server, LKContext *ctx) {
     }
 
     // Run cgi script if uri falls under cgidir
-    if (hc->cgidir->s_len > 0 && lk_string_starts_with(ctx->req->uri, hc->cgidir->s)) {
+    if (hc->cgidir->s_len > 0 && lk_string_starts_with(ctx->req->path, hc->cgidir->s)) {
         serve_cgi(server, ctx, hc);
         return;
     }

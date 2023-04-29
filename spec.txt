@@ -1,57 +1,28 @@
 Todo:
 - handle HEAD http request
 - support cgi request post with body content
-- specify alias to cgi file Ex. -cgialias guestbook=guestbook.pl
 - specify chunked transfer encoding 
-
-command line:
-
-// lkws [homedir] [port] [host] [-a <alias1>=<path>]...
-// homedir = absolute or relative path to a home directory
-//           defaults to current working directory if not specified
-// port    = port number to bind to server
-//           defaults to 8000
-// host    = IP address to bind to server
-//           defaults to localhost
-// Examples:
-// lkws ./testsite/ 8080 -a latest=latest.html -a about=about.html
-// lkws /var/www/testsite/ 8080 127.0.0.1 -a latest=folder/latest.html
-// lkws /var/www/testsite/ --cgidir=cgifolder
-// lkws ./testsite -p newsboard.littlekitten.xyz=localhost:8001
-// lkws -f config.conf
 
 config file:
 ------------
-host=127.0.0.1
+serverhost=127.0.0.1
 port=5000
 
-# Matches all other hostnames
-hostname *
-homedir=/var/www/testsite
-alias latest=latest.html
-
-# Matches http://localhost
-hostname localhost
-homedir=/var/www/testsite
-
-# http://littlekitten.xyz
-hostname littlekitten.xyz
-homedir=/var/www/testsite
-cgidir=cgi-bin (relative to homedir)
+# testsite.xyz
+hostname testsite.xyz
+homedir=www/testsite
+cgidir=cgi-bin
 alias latest=latest.html
 alias about=about.html
-alias guestbook=cgi-bin/guestbook.pl
-alias blog=cgi-bin/blog.pl
+alias cgitest=cgi-bin/index.pl
 
 # Redirect newsboard.littlekitten.xyz to localhost:8001 server
 hostname newsboard.littlekitten.xyz
 proxyhost=localhost:8001
 
-hostname blog.littlekitten.xyz
-homedir=/var/www/blog
-cgidir=.
-alias latest=latest.pl
-alias login=login.pl
+# littlekitten.xyz
+hostname littlekitten.xyz
+homedir=www/littlekitten
 
 cgi post docs:
 https://www.oreilly.com/library/view/cgi-programming-on/9781565921689/07_chapter-04.html
