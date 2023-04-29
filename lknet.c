@@ -256,6 +256,32 @@ int lk_read(int fd, char *buf, size_t count, size_t *ret_nread) {
     return 0;
 }
 
+// Write count bytes from buf nonblocking (via open O_NONBLOCK flag).
+// Returns 0 for success, -1 for error.
+// On return, ret_nread contains the number of bytes read.
+int lk_write(int fd, char *buf, size_t count, size_t *ret_nwrite) {
+    size_t nwrite = 0;
+    while (nwrite < count) {
+        int z = write(fd, buf+nwrite, count-nwrite);
+        // EOF
+        if (z == 0) {
+            break;
+        }
+        // interrupt occured during read, retry read.
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        if (z == -1) {
+            // errno is set to EAGAIN/EWOULDBLOCK if fd is blocked
+            *ret_nwrite = nwrite;
+            return -1;
+        }
+        nwrite += z;
+    }
+    *ret_nwrite = nwrite;
+    return 0;
+}
+
 
 /** lksocketreader functions **/
 

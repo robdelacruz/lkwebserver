@@ -32,6 +32,7 @@ LKContext *lk_context_new() {
     ctx->reqparser = NULL;
     ctx->cgiparser = NULL;
     ctx->cgi_outputbuf = NULL;
+    ctx->cgi_inputbuf = NULL;
     ctx->proxyfd = 0;
     ctx->proxy_respbuf = NULL;
 
@@ -55,6 +56,7 @@ LKContext *create_initial_context(int fd, struct sockaddr_in *sa) {
 
     ctx->cgiparser = NULL;
     ctx->cgi_outputbuf = NULL;
+    ctx->cgi_inputbuf = NULL;
 
     ctx->proxyfd = 0;
     ctx->proxy_respbuf = NULL;
@@ -84,6 +86,9 @@ void lk_context_free(LKContext *ctx) {
     if (ctx->cgi_outputbuf) {
         lk_buffer_free(ctx->cgi_outputbuf);
     }
+    if (ctx->cgi_inputbuf) {
+        lk_buffer_free(ctx->cgi_inputbuf);
+    }
     if (ctx->proxy_respbuf) {
         lk_buffer_free(ctx->proxy_respbuf);
     }
@@ -99,6 +104,7 @@ void lk_context_free(LKContext *ctx) {
     ctx->resp = NULL;
     ctx->cgiparser = NULL;
     ctx->cgi_outputbuf = NULL;
+    ctx->cgi_inputbuf = NULL;
     ctx->proxyfd = 0;
     ctx->proxy_respbuf = NULL;
     free(ctx);
@@ -127,7 +133,6 @@ void add_new_client_context(LKContext **pphead, LKContext *ctx) {
 }
 
 // Add ctx to end of ctx linked list, allowing duplicate clientfds.
-//$$ todo: unused, remove this?
 void add_context(LKContext **pphead, LKContext *ctx) {
     assert(pphead != NULL);
 
@@ -145,7 +150,7 @@ void add_context(LKContext **pphead, LKContext *ctx) {
 }
 
 
-// Delete all ctx's of this clientfd from linked list.
+// Delete first ctx having clientfd from linked list.
 // Returns 1 if context was deleted, 0 if no deletion made.
 int remove_client_context(LKContext **pphead, int clientfd) {
     assert(pphead != NULL);
@@ -199,5 +204,39 @@ LKContext *match_select_ctx(LKContext *phead, int selectfd) {
     }
     return ctx;
 }
+
+// Delete first ctx having selectfd from linked list.
+// Returns 1 if context was deleted, 0 if no deletion made.
+int remove_selectfd_context(LKContext **pphead, int selectfd) {
+    assert(pphead != NULL);
+
+    if (*pphead == NULL) {
+        return 0;
+    }
+    // remove head ctx
+    if ((*pphead)->selectfd == selectfd) {
+        LKContext *tmp = *pphead;
+        *pphead = (*pphead)->next;
+        lk_context_free(tmp);
+        return 1;
+    }
+
+    LKContext *p = *pphead;
+    LKContext *prev = NULL;
+    while (p != NULL) {
+        if (p->selectfd == selectfd) {
+            assert(prev != NULL);
+            prev->next = p->next;
+            lk_context_free(p);
+            return 1;
+        }
+
+        prev = p;
+        p = p->next;
+    }
+
+    return 0;
+}
+
 
 

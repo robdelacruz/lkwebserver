@@ -100,6 +100,7 @@ void lk_httpcgiparser_parse_bytes(LKHttpCGIParser *parser, char *buf, size_t buf
 typedef enum {
     CTX_READ_REQ,
     CTX_READ_CGI_OUTPUT,
+    CTX_WRITE_CGI_INPUT,
     CTX_WRITE_RESP,
     CTX_PROXY_WRITE_REQ,
     CTX_PROXY_READ_RESP,
@@ -123,7 +124,8 @@ typedef struct lkcontext_s {
                                       //
     // Used by CTX_READ_CGI:
     LKHttpCGIParser *cgiparser;       // parser for cgi stream
-    LKBuffer *cgi_outputbuf;          // accumulate cgi output
+    LKBuffer *cgi_outputbuf;          // receive cgi stdout bytes here
+    LKBuffer *cgi_inputbuf;           // input bytes to pass to cgi stdin
 
     // Used by CTX_PROXY_WRITE_REQ:
     int proxyfd;
@@ -139,6 +141,7 @@ void add_context(LKContext **pphead, LKContext *ctx);
 int remove_client_context(LKContext **pphead, int clientfd);
 void remove_client_contexts(LKContext **pphead, int clientfd);
 LKContext *match_select_ctx(LKContext *phead, int selectfd);
+int remove_selectfd_context(LKContext **pphead, int selectfd);
 
 
 /*** LKConfig ***/
@@ -210,6 +213,8 @@ unsigned short lk_get_sockaddr_port(struct sockaddr *sa);
 
 // File equivalent of lk_sock_recv()
 int lk_read(int fd, char *buf, size_t count, size_t *ret_nread);
+// File equivalent of lk_sock_send()
+int lk_write(int fd, char *buf, size_t count, size_t *ret_nwrite);
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s);
 // Read entire file into buf.

@@ -29,7 +29,7 @@ void FD_CLR_WRITE(int fd, LKHttpServer *server);
 
 void read_request(LKHttpServer *server, LKContext *ctx);
 void read_cgi_output(LKHttpServer *server, LKContext *ctx);
-void read_cgi_error(LKHttpServer *server, LKContext *ctx);
+void write_cgi_input(LKHttpServer *server, LKContext *ctx);
 void process_request(LKHttpServer *server, LKContext *ctx);
 
 void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc);
@@ -47,6 +47,7 @@ char *fileext(char *filepath);
 
 void write_response(LKHttpServer *server, LKContext *ctx);
 int send_buf_bytes(int sock, LKBuffer *buf);
+int write_buf_bytes(int fd, LKBuffer *buf);
 void terminate_client_session(LKHttpServer *server, LKContext *ctx);
 
 void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost);
@@ -193,6 +194,8 @@ int lk_httpserver_serve(LKHttpServer *server) {
                     assert(ctx->resp != NULL);
                     assert(ctx->resp->head != NULL);
                     write_response(server, ctx);
+                } else if (ctx->type == CTX_WRITE_CGI_INPUT) {
+                    write_cgi_input(server, ctx);
                 } else if (ctx->type == CTX_PROXY_WRITE_REQ) {
                     assert(ctx->req != NULL);
                     assert(ctx->req->head != NULL);
@@ -311,6 +314,30 @@ void read_request(LKHttpServer *server, LKContext *ctx) {
     }
 }
 
+// Send cgi_inputbuf input bytes to cgi program stdin set in selectfd.
+void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
+    assert(ctx->cgi_inputbuf != NULL);
+    LKBuffer *buf = ctx->cgi_inputbuf;
+
+    // Write as much input bytes as the cgi program will receive.
+    if (buf->bytes_cur < buf->bytes_len) {
+        int z = write_buf_bytes(ctx->selectfd, buf);
+        if (z == -1 && errno == EPIPE) {
+            // client socket was shutdown
+            lk_print_err("write_buf_bytes()");
+            FD_CLR_WRITE(ctx->selectfd, server);
+            remove_selectfd_context(&server->ctxhead, ctx->selectfd);
+            return;
+        }
+    } else {
+        // Completed writing input bytes.
+        FD_CLR_WRITE(ctx->selectfd, server);
+        shutdown(ctx->selectfd, SHUT_WR);
+        remove_selectfd_context(&server->ctxhead, ctx->selectfd);
+    }
+}
+
+// Read cgi output to cgi_outputbuf.
 void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
     int z;
     size_t nread;
@@ -530,6 +557,20 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     ctx->type = CTX_READ_CGI_OUTPUT;
     ctx->cgi_outputbuf = lk_buffer_new(0);
     FD_SET_READ(ctx->selectfd, server);
+
+    if (req->body->bytes_len > 0) {
+        LKContext *cgi_in_ctx = lk_context_new();
+        add_context(&server->ctxhead, cgi_in_ctx);
+
+        cgi_in_ctx->selectfd = fd_in;
+        cgi_in_ctx->clientfd = ctx->clientfd;
+        cgi_in_ctx->type = CTX_WRITE_CGI_INPUT;
+
+        cgi_in_ctx->cgi_inputbuf = lk_buffer_new(0);
+        lk_buffer_append(cgi_in_ctx->cgi_inputbuf, req->body->bytes, req->body->bytes_len);
+
+        FD_SET_WRITE(ctx->selectfd, server);
+    }
 }
 
 void process_response(LKHttpServer *server, LKContext *ctx) {
@@ -774,6 +815,19 @@ int send_buf_bytes(int sock, LKBuffer *buf) {
     buf->bytes_cur += nsent;
     return z;
 }
+
+// Send buf data into fd, keeping track of last buffer position.
+// Used to cumulatively send buffer data with multiple writes.
+int write_buf_bytes(int fd, LKBuffer *buf) {
+    size_t nwrite = 0;
+    int z = lk_write(fd,
+        buf->bytes + buf->bytes_cur,
+        buf->bytes_len - buf->bytes_cur,
+        &nwrite);
+    buf->bytes_cur += nwrite;
+    return z;
+}
+
 
 // Disconnect from client.
 void terminate_client_session(LKHttpServer *server, LKContext *ctx) {
