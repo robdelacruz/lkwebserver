@@ -1,5 +1,4 @@
 Todo:
-- handle HEAD http request
 - support cgi request post with body content
 - specify chunked transfer encoding 
 

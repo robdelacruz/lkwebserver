@@ -423,12 +423,12 @@ void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
 
     LKHttpRequest *req = ctx->req;
     LKHttpResponse *resp = ctx->resp;
-    char *method = req->method->s;
+    LKString *method = req->method;
     LKString *path = req->path;
 
-    if (!strcmp(method, "GET")) {
+    if (lk_string_sz_equal(method, "GET") || lk_string_sz_equal(method, "HEAD")) {
         // For root, default to index.html, ...
-        if (!strcmp(path->s, "")) {
+        if (path->s_len == 0) {
             char *default_files[] = {"/index.html", "/index.htm", "/default.html", "/default.htm"};
             for (int i=0; i < sizeof(default_files) / sizeof(char *); i++) {
                 z = read_path_file(hc->homedir->s, default_files[i], resp->body);
@@ -457,7 +457,7 @@ void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
         return;
     }
 #ifdef POSTTEST
-    if (!strcmp(method, "POST")) {
+    if (lk_string_sz_equal(method, "POST")) {
         static char *html_start =
            "<!DOCTYPE html>\n"
            "<html>\n"
@@ -537,6 +537,11 @@ void process_response(LKHttpServer *server, LKContext *ctx) {
     LKHttpResponse *resp = ctx->resp;
 
     lk_httpresponse_finalize(resp);
+
+    // Clear response body on HEAD request.
+    if (lk_string_sz_equal(req->method, "HEAD")) {
+        lk_buffer_clear(resp->body);
+    }
 
     char time_str[TIME_STRING_SIZE];
     get_localtime_string(time_str, sizeof(time_str));
