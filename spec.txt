@@ -1,7 +1,5 @@
 Todo:
-- config file for parameters/settings as alternative to command-line switches
 - handle HEAD http request
-- show cgi stderr in cgi response output
 - support cgi request post with body content
 - specify alias to cgi file Ex. -cgialias guestbook=guestbook.pl
 - specify chunked transfer encoding 

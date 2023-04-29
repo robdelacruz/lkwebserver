@@ -99,7 +99,7 @@ void lk_httpcgiparser_parse_bytes(LKHttpCGIParser *parser, char *buf, size_t buf
 /*** LKContext ***/
 typedef enum {
     CTX_READ_REQ,
-    CTX_READ_CGI,
+    CTX_READ_CGI_OUTPUT,
     CTX_WRITE_RESP,
     CTX_PROXY_WRITE_REQ,
     CTX_PROXY_READ_RESP,
@@ -123,18 +123,22 @@ typedef struct lkcontext_s {
                                       //
     // Used by CTX_READ_CGI:
     LKHttpCGIParser *cgiparser;       // parser for cgi stream
-    LKBuffer *cgibuf;                 // cgi stream
+    LKBuffer *cgi_outputbuf;          // accumulate cgi output
 
     // Used by CTX_PROXY_WRITE_REQ:
     int proxyfd;
     LKBuffer *proxy_respbuf;
 } LKContext;
 
-LKContext *create_context(int fd, struct sockaddr_in *sa);
-void free_context(LKContext *ctx);
+LKContext *lk_context_new();
+LKContext *create_initial_context(int fd, struct sockaddr_in *sa);
+void lk_context_free(LKContext *ctx);
+
+void add_new_client_context(LKContext **pphead, LKContext *ctx);
 void add_context(LKContext **pphead, LKContext *ctx);
-void remove_context(LKContext **pphead, int fd);
-LKContext *match_ctx(LKContext *phead, int fd);
+int remove_client_context(LKContext **pphead, int clientfd);
+void remove_client_contexts(LKContext **pphead, int clientfd);
+LKContext *match_select_ctx(LKContext *phead, int selectfd);
 
 
 /*** LKConfig ***/

@@ -28,7 +28,8 @@ void FD_CLR_READ(int fd, LKHttpServer *server);
 void FD_CLR_WRITE(int fd, LKHttpServer *server);
 
 void read_request(LKHttpServer *server, LKContext *ctx);
-void read_cgistream(LKHttpServer *server, LKContext *ctx);
+void read_cgi_output(LKHttpServer *server, LKContext *ctx);
+void read_cgi_error(LKHttpServer *server, LKContext *ctx);
 void process_request(LKHttpServer *server, LKContext *ctx);
 
 void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc);
@@ -72,7 +73,7 @@ void lk_httpserver_free(LKHttpServer *server) {
     while (ctx != NULL) {
         LKContext *ptmp = ctx;
         ctx = ctx->next;
-        free_context(ptmp);
+        lk_context_free(ptmp);
     }
 
     memset(server, 0, sizeof(LKHttpServer));
@@ -155,36 +156,36 @@ int lk_httpserver_serve(LKHttpServer *server) {
                     // Add new client socket to list of read sockets.
                     FD_SET_READ(clientfd, server);
 
-                    LKContext *ctx = create_context(clientfd, &sa);
-                    add_context(&server->ctxhead, ctx);
+                    LKContext *ctx = create_initial_context(clientfd, &sa);
+                    add_new_client_context(&server->ctxhead, ctx);
                     continue;
                 } else {
                     //printf("read fd %d\n", i);
 
-                    int fd = i;
-                    LKContext *ctx = match_ctx(server->ctxhead, fd);
+                    int selectfd = i;
+                    LKContext *ctx = match_select_ctx(server->ctxhead, selectfd);
                     if (ctx == NULL) {
-                        printf("read fd %d not in ctx list\n", fd);
+                        printf("read selectfd %d not in ctx list\n", selectfd);
                         continue;
                     }
 
                     if (ctx->type == CTX_READ_REQ) {
                         read_request(server, ctx);
-                    } else if (ctx->type == CTX_READ_CGI) {
-                        read_cgistream(server, ctx);
+                    } else if (ctx->type == CTX_READ_CGI_OUTPUT) {
+                        read_cgi_output(server, ctx);
                     } else if (ctx->type == CTX_PROXY_READ_RESP) {
                         read_proxy_response(server, ctx);
                     } else {
-                        printf("read fd %d with unknown ctx type %d\n", fd, ctx->type);
+                        printf("read selectfd %d with unknown ctx type %d\n", selectfd, ctx->type);
                     }
                 }
             } else if (FD_ISSET(i, &cur_writefds)) {
                 //printf("write fd %d\n", i);
 
-                int fd = i;
-                LKContext *ctx = match_ctx(server->ctxhead, fd);
+                int selectfd = i;
+                LKContext *ctx = match_select_ctx(server->ctxhead, selectfd);
                 if (ctx == NULL) {
-                    printf("write fd %d not in ctx list\n", fd);
+                    printf("write selectfd %d not in ctx list\n", selectfd);
                     continue;
                 }
 
@@ -200,7 +201,7 @@ int lk_httpserver_serve(LKHttpServer *server) {
                     assert(ctx->proxy_respbuf != NULL);
                     write_proxy_response(server, ctx);
                 } else {
-                    printf("write fd %d with unknown ctx type %d\n", fd, ctx->type);
+                    printf("write selectfd %d with unknown ctx type %d\n", selectfd, ctx->type);
                 }
             }
         }
@@ -310,17 +311,17 @@ void read_request(LKHttpServer *server, LKContext *ctx) {
     }
 }
 
-void read_cgistream(LKHttpServer *server, LKContext *ctx) {
+void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
     int z;
     size_t nread;
     char readbuf[LK_BUFSIZE_LARGE];
     char cgiline[LK_BUFSIZE_MEDIUM];
 
     while (1) {
-        // Incrementally read cgi output into ctx->cgibuf
+        // Incrementally read cgi output into ctx->cgi_outputbuf
         z = lk_read(ctx->selectfd, readbuf, sizeof(readbuf), &nread);
         if (nread > 0) {
-            lk_buffer_append(ctx->cgibuf, readbuf, nread);
+            lk_buffer_append(ctx->cgi_outputbuf, readbuf, nread);
         }
         if (z == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -337,28 +338,38 @@ void read_cgistream(LKHttpServer *server, LKContext *ctx) {
     // EOF - finished reading cgi output.
     assert(z == 0 && nread == 0);
 
-    // Remove cgi stream from read list.
+    // Remove cgi output from read list.
     FD_CLR_READ(ctx->selectfd, server);
     z = close(ctx->selectfd);
     if (z == -1) {
-        lk_print_err("read_cgistream close()");
+        lk_print_err("read_cgi_output close()");
     }
     ctx->cgiparser = lk_httpcgiparser_new(ctx->resp);
 
-    // Parse cgibuf line by line into http response.
-    while (1) {
-        if (!ctx->cgiparser->head_complete) {
-            lk_buffer_readline(ctx->cgibuf, cgiline, sizeof(cgiline));
-            lk_chomp(cgiline);
-            lk_httpcgiparser_parse_line(ctx->cgiparser, cgiline);
-            continue;
+    // Parse cgi_outputbuf line by line into http response.
+    LKBuffer *buf = ctx->cgi_outputbuf;
+    while (buf->bytes_cur < buf->bytes_len) {
+        lk_buffer_readline(buf, cgiline, sizeof(cgiline));
+        lk_chomp(cgiline);
+        lk_httpcgiparser_parse_line(ctx->cgiparser, cgiline);
+
+        if (ctx->cgiparser->head_complete) {
+            break;
         }
+    }
+    if (buf->bytes_cur < buf->bytes_len) {
         lk_httpcgiparser_parse_bytes(
             ctx->cgiparser,
-            ctx->cgibuf->bytes + ctx->cgibuf->bytes_cur,
-            ctx->cgibuf->bytes_len - ctx->cgibuf->bytes_cur
+            buf->bytes + buf->bytes_cur,
+            buf->bytes_len - buf->bytes_cur
         );
-        break;
+    }
+
+    // If cgi error (no response head after parsing),
+    // copy cgi output as is to display the error messages.
+    if (!ctx->cgiparser->head_complete) {
+        lk_buffer_clear(ctx->resp->body);
+        lk_buffer_append(ctx->resp->body, buf->bytes, buf->bytes_len);
     }
     process_response(server, ctx);
 }
@@ -498,8 +509,10 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
 
     set_cgi_env2(server, ctx, hc);
 
+    // cgi stdout and stderr are streamed to fd_out.
+    //$$todo pass any request body to fd_in.
     int fd_in, fd_out;
-    int z = lk_popen(cgifile->s, &fd_in, &fd_out);
+    int z = lk_popen3(cgifile->s, &fd_in, &fd_out, NULL);
     lk_string_free(cgifile);
     if (z == -1) {
         resp->status = 500;
@@ -514,8 +527,8 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
 
     // Read cgi output in select()
     ctx->selectfd = fd_out;
-    ctx->type = CTX_READ_CGI;
-    ctx->cgibuf = lk_buffer_new(0);
+    ctx->type = CTX_READ_CGI_OUTPUT;
+    ctx->cgi_outputbuf = lk_buffer_new(0);
     FD_SET_READ(ctx->selectfd, server);
 }
 
@@ -779,7 +792,7 @@ void terminate_client_session(LKHttpServer *server, LKContext *ctx) {
             lk_print_err("close()");
         }
     }
-    // Remove client from ctx list.
-    remove_context(&server->ctxhead, ctx->selectfd);
+    // Remove from linked list and free ctx.
+    remove_client_context(&server->ctxhead, ctx->clientfd);
 }
 

@@ -17,7 +17,28 @@
 #include "lknet.h"
 
 /*** LKContext functions ***/
-LKContext *create_context(int fd, struct sockaddr_in *sa) {
+LKContext *lk_context_new() {
+    LKContext *ctx = malloc(sizeof(LKContext));
+    ctx->selectfd = 0;
+    ctx->clientfd = 0;
+    ctx->type = 0;
+    ctx->next = NULL;
+
+    ctx->client_ipaddr = NULL;
+    ctx->client_port = 0;
+    ctx->sr = NULL;
+    ctx->req = NULL;
+    ctx->resp = NULL;
+    ctx->reqparser = NULL;
+    ctx->cgiparser = NULL;
+    ctx->cgi_outputbuf = NULL;
+    ctx->proxyfd = 0;
+    ctx->proxy_respbuf = NULL;
+
+    return ctx;
+}
+
+LKContext *create_initial_context(int fd, struct sockaddr_in *sa) {
     LKContext *ctx = malloc(sizeof(LKContext));
     ctx->selectfd = fd;
     ctx->clientfd = fd;
@@ -33,7 +54,7 @@ LKContext *create_context(int fd, struct sockaddr_in *sa) {
     ctx->reqparser = lk_httprequestparser_new(ctx->req);
 
     ctx->cgiparser = NULL;
-    ctx->cgibuf = NULL;
+    ctx->cgi_outputbuf = NULL;
 
     ctx->proxyfd = 0;
     ctx->proxy_respbuf = NULL;
@@ -41,7 +62,7 @@ LKContext *create_context(int fd, struct sockaddr_in *sa) {
     return ctx;
 }
 
-void free_context(LKContext *ctx) {
+void lk_context_free(LKContext *ctx) {
     if (ctx->client_ipaddr) {
         lk_string_free(ctx->client_ipaddr);
     }
@@ -60,8 +81,8 @@ void free_context(LKContext *ctx) {
     if (ctx->resp) {
         lk_httpresponse_free(ctx->resp);
     }
-    if (ctx->cgibuf) {
-        lk_buffer_free(ctx->cgibuf);
+    if (ctx->cgi_outputbuf) {
+        lk_buffer_free(ctx->cgi_outputbuf);
     }
     if (ctx->proxy_respbuf) {
         lk_buffer_free(ctx->proxy_respbuf);
@@ -77,14 +98,15 @@ void free_context(LKContext *ctx) {
     ctx->req = NULL;
     ctx->resp = NULL;
     ctx->cgiparser = NULL;
-    ctx->cgibuf = NULL;
+    ctx->cgi_outputbuf = NULL;
     ctx->proxyfd = 0;
     ctx->proxy_respbuf = NULL;
     free(ctx);
 }
 
-// Add ctx to end of ctx linked list. Skip if ctx fd already in list.
-void add_context(LKContext **pphead, LKContext *ctx) {
+// Add new client ctx to end of ctx linked list.
+// Skip if ctx clientfd already in list.
+void add_new_client_context(LKContext **pphead, LKContext *ctx) {
     assert(pphead != NULL);
 
     if (*pphead == NULL) {
@@ -95,7 +117,7 @@ void add_context(LKContext **pphead, LKContext *ctx) {
         LKContext *p = *pphead;
         while (p->next != NULL) {
             // ctx fd already exists
-            if (p->selectfd == ctx->selectfd) {
+            if (p->clientfd == ctx->clientfd) {
                 return;
             }
             p = p->next;
@@ -104,41 +126,73 @@ void add_context(LKContext **pphead, LKContext *ctx) {
     }
 }
 
-// Remove ctx fd from ctx linked list.
-void remove_context(LKContext **pphead, int fd) {
+// Add ctx to end of ctx linked list, allowing duplicate clientfds.
+//$$ todo: unused, remove this?
+void add_context(LKContext **pphead, LKContext *ctx) {
     assert(pphead != NULL);
 
     if (*pphead == NULL) {
-        return;
+        // first client
+        *pphead = ctx;
+    } else {
+        // add to end of clients list
+        LKContext *p = *pphead;
+        while (p->next != NULL) {
+            p = p->next;
+        }
+        p->next = ctx;
+    }
+}
+
+
+// Delete all ctx's of this clientfd from linked list.
+// Returns 1 if context was deleted, 0 if no deletion made.
+int remove_client_context(LKContext **pphead, int clientfd) {
+    assert(pphead != NULL);
+
+    if (*pphead == NULL) {
+        return 0;
     }
     // remove head ctx
-    if ((*pphead)->selectfd == fd) {
+    if ((*pphead)->clientfd == clientfd) {
         LKContext *tmp = *pphead;
         *pphead = (*pphead)->next;
-        free_context(tmp);
-        return;
+        lk_context_free(tmp);
+        return 1;
     }
 
     LKContext *p = *pphead;
     LKContext *prev = NULL;
     while (p != NULL) {
-        if (p->selectfd == fd) {
+        if (p->clientfd == clientfd) {
             assert(prev != NULL);
             prev->next = p->next;
-            free_context(p);
-            return;
+            lk_context_free(p);
+            return 1;
         }
 
         prev = p;
         p = p->next;
     }
+
+    return 0;
 }
 
-// Return ctx matching either client fd or server file / cgi fd.
-LKContext *match_ctx(LKContext *phead, int fd) {
+// Delete all ctx's having clientfd.
+//$$ todo: unused, remove this?
+void remove_client_contexts(LKContext **pphead, int clientfd) {
+    int z = 1;
+    // Keep trying to remove matching clientfd's until none left.
+    while (z != 0) {
+        z = remove_client_context(pphead, clientfd);
+    }
+}
+
+// Return ctx matching selectfd.
+LKContext *match_select_ctx(LKContext *phead, int selectfd) {
     LKContext *ctx = phead;
     while (ctx != NULL) {
-        if (ctx->selectfd == fd) {
+        if (ctx->selectfd == selectfd) {
             break;
         }
         ctx = ctx->next;
