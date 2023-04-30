@@ -281,13 +281,11 @@ void lk_config_finalize(LKConfig *cfg) {
     // Note: If other hostconfigs are set, such as in a config file,
     // the fallthrough '*' hostconfig should be set explicitly. 
     if (cfg->hostconfigs_len == 0) {
-        // Set homedir to current directory if no other hostconfigs.
+        // homedir default to current directory
         LKHostConfig *hc = lk_config_create_get_hostconfig(cfg, "*");
-        if (hc->homedir->s_len == 0) {
-            lk_string_assign(hc->homedir, current_dir->s);
-        }
+        lk_string_assign(hc->homedir, current_dir->s);
 
-        // Set cgidir to cgi-bin if not specified.
+        // cgidir default to cgi-bin
         if (hc->cgidir->s_len == 0) {
             lk_string_assign(hc->cgidir, "/cgi-bin/");
         }

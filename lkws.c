@@ -111,9 +111,14 @@ void parse_args(int argc, char *argv[], LKConfig *cfg) {
         }
         assert(state == PA_NONE);
         if (!is_homedir_set) {
-            LKHostConfig *default_hc = lk_config_create_get_hostconfig(cfg, "*");
-            lk_string_assign(default_hc->homedir, arg);
+            LKHostConfig *hc0 = lk_config_create_get_hostconfig(cfg, "*");
+            lk_string_assign(hc0->homedir, arg);
             is_homedir_set = 1;
+
+            // cgidir default to cgi-bin
+            if (hc0->cgidir->s_len == 0) {
+                lk_string_assign(hc0->cgidir, "/cgi-bin/");
+            }
         } else if (!is_port_set) {
             lk_string_assign(cfg->port, arg);
             is_port_set = 1;
