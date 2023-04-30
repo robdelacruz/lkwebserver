@@ -342,7 +342,6 @@ void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
     int z;
     size_t nread;
     char readbuf[LK_BUFSIZE_LARGE];
-    char cgiline[LK_BUFSIZE_MEDIUM];
 
     while (1) {
         // Incrementally read cgi output into ctx->cgi_outputbuf
@@ -371,33 +370,8 @@ void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
     if (z == -1) {
         lk_print_err("read_cgi_output close()");
     }
-    ctx->cgiparser = lk_httpcgiparser_new(ctx->resp);
 
-    // Parse cgi_outputbuf line by line into http response.
-    LKBuffer *buf = ctx->cgi_outputbuf;
-    while (buf->bytes_cur < buf->bytes_len) {
-        lk_buffer_readline(buf, cgiline, sizeof(cgiline));
-        lk_chomp(cgiline);
-        lk_httpcgiparser_parse_line(ctx->cgiparser, cgiline);
-
-        if (ctx->cgiparser->head_complete) {
-            break;
-        }
-    }
-    if (buf->bytes_cur < buf->bytes_len) {
-        lk_httpcgiparser_parse_bytes(
-            ctx->cgiparser,
-            buf->bytes + buf->bytes_cur,
-            buf->bytes_len - buf->bytes_cur
-        );
-    }
-
-    // If cgi error (no response head after parsing),
-    // copy cgi output as is to display the error messages.
-    if (!ctx->cgiparser->head_complete) {
-        lk_buffer_clear(ctx->resp->body);
-        lk_buffer_append(ctx->resp->body, buf->bytes, buf->bytes_len);
-    }
+    parse_cgi_output(ctx->cgi_outputbuf, ctx->resp);
     process_response(server, ctx);
 }
 
@@ -558,18 +532,19 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     ctx->cgi_outputbuf = lk_buffer_new(0);
     FD_SET_READ(ctx->selectfd, server);
 
+    // If req is POST with body, pass it to cgi process stdin.
     if (req->body->bytes_len > 0) {
-        LKContext *cgi_in_ctx = lk_context_new();
-        add_context(&server->ctxhead, cgi_in_ctx);
+        LKContext *ctx_in = lk_context_new();
+        add_context(&server->ctxhead, ctx_in);
 
-        cgi_in_ctx->selectfd = fd_in;
-        cgi_in_ctx->clientfd = ctx->clientfd;
-        cgi_in_ctx->type = CTX_WRITE_CGI_INPUT;
+        ctx_in->selectfd = fd_in;
+        ctx_in->clientfd = ctx->clientfd;
+        ctx_in->type = CTX_WRITE_CGI_INPUT;
 
-        cgi_in_ctx->cgi_inputbuf = lk_buffer_new(0);
-        lk_buffer_append(cgi_in_ctx->cgi_inputbuf, req->body->bytes, req->body->bytes_len);
+        ctx_in->cgi_inputbuf = lk_buffer_new(0);
+        lk_buffer_append(ctx_in->cgi_inputbuf, req->body->bytes, req->body->bytes_len);
 
-        FD_SET_WRITE(ctx->selectfd, server);
+        FD_SET_WRITE(ctx_in->selectfd, server);
     }
 }
 

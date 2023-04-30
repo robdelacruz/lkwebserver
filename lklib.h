@@ -12,6 +12,8 @@
 void lk_print_err(char *s);
 void lk_exit_err(char *s);
 char *lk_vasprintf(char *fmt, va_list args);
+int is_empty_line(char *s);
+int ends_with_newline(char *s);
 int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err);
 
 // Return localtime in server format: 11/Mar/2023 14:05:46

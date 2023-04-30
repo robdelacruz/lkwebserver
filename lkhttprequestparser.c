@@ -13,8 +13,6 @@ void parse_line(LKHttpRequestParser *parser, char *line);
 void parse_request_line(char *line, LKHttpRequest *req);
 static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req);
 void parse_uri(LKString *lks_uri, LKString *lks_path, LKString *lks_filename, LKString *lks_qs);
-int is_empty_line(char *s);
-int ends_with_newline(char *s);
 
 /*** LKHttpRequestParser functions ***/
 LKHttpRequestParser *lk_httprequestparser_new(LKHttpRequest *req) {
@@ -94,30 +92,6 @@ void parse_line(LKHttpRequestParser *parser, char *line) {
         parse_header_line(parser, line, parser->req);
         return;
     }
-}
-
-// Return whether line is empty, ignoring whitespace chars ' ', \r, \n
-int is_empty_line(char *s) {
-    int slen = strlen(s);
-    for (int i=0; i < slen; i++) {
-        // Not an empty line if non-whitespace char is present.
-        if (s[i] != ' ' && s[i] != '\n' && s[i] != '\r') {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-// Return whether string ends with \n char.
-int ends_with_newline(char *s) {
-    int slen = strlen(s);
-    if (slen == 0) {
-        return 0;
-    }
-    if (s[slen-1] == '\n') {
-        return 1;
-    }
-    return 0;
 }
 
 // Parse initial request line in the format:

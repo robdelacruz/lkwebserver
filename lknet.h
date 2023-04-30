@@ -81,19 +81,8 @@ void lk_httprequestparser_reset(LKHttpRequestParser *parser);
 void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
 void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, size_t buf_len);
 
-
-/*** LKHttpCGIParser ***/
-typedef struct {
-    int head_complete;              // flag indicating header lines complete
-    unsigned int status;            // value of Status header
-    LKHttpResponse *resp;           // httpresponse to output to while parsing
-} LKHttpCGIParser;
-
-LKHttpCGIParser *lk_httpcgiparser_new(LKHttpResponse *resp);
-void lk_httpcgiparser_free(LKHttpCGIParser *parser);
-void lk_httpcgiparser_reset(LKHttpCGIParser *parser);
-void lk_httpcgiparser_parse_line(LKHttpCGIParser *parser, char *line);
-void lk_httpcgiparser_parse_bytes(LKHttpCGIParser *parser, char *buf, size_t buf_len);
+/*** CGI Parser ***/
+void parse_cgi_output(LKBuffer *buf, LKHttpResponse *resp);
 
 
 /*** LKContext ***/
@@ -123,7 +112,6 @@ typedef struct lkcontext_s {
     LKHttpResponse *resp;             // http response to be sent
                                       //
     // Used by CTX_READ_CGI:
-    LKHttpCGIParser *cgiparser;       // parser for cgi stream
     LKBuffer *cgi_outputbuf;          // receive cgi stdout bytes here
     LKBuffer *cgi_inputbuf;           // input bytes to pass to cgi stdin
 
