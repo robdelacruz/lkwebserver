@@ -13,6 +13,7 @@ void parse_cgi_header_line(char *line, LKHttpResponse *resp);
 
 void parse_cgi_output(LKBuffer *buf, LKHttpResponse *resp) {
     char cgiline[LK_BUFSIZE_MEDIUM];
+    int has_crlf = 0;
 
     // Parse cgi_outputbuf line by line into http response.
     while (buf->bytes_cur < buf->bytes_len) {
@@ -21,6 +22,7 @@ void parse_cgi_output(LKBuffer *buf, LKHttpResponse *resp) {
 
         // Empty CRLF line ends the headers section
         if (is_empty_line(cgiline)) {
+            has_crlf = 1;
             break;
         }
         parse_cgi_header_line(cgiline, resp);
@@ -35,9 +37,9 @@ void parse_cgi_output(LKBuffer *buf, LKHttpResponse *resp) {
 
     char *content_type = lk_stringtable_get(resp->headers, "Content-Type");
 
-    // If cgi error (no Content-Type header),
+    // If cgi error
     // copy cgi output as is to display the error messages.
-    if (content_type == NULL) {
+    if (!has_crlf && content_type == NULL) {
         lk_stringtable_set(resp->headers, "Content-Type", "text/plain");
         lk_buffer_clear(resp->body);
         lk_buffer_append(resp->body, buf->bytes, buf->bytes_len);
