@@ -48,6 +48,7 @@ char *fileext(char *filepath);
 void write_response(LKHttpServer *server, LKContext *ctx);
 int send_buf_bytes(int sock, LKBuffer *buf);
 int write_buf_bytes(int fd, LKBuffer *buf);
+int read_buf_bytes(int fd, LKBuffer *buf);
 void terminate_client_session(LKHttpServer *server, LKContext *ctx);
 
 void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost);
@@ -327,42 +328,30 @@ void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
             lk_print_err("write_buf_bytes()");
             FD_CLR_WRITE(ctx->selectfd, server);
             remove_selectfd_context(&server->ctxhead, ctx->selectfd);
-            return;
         }
-    } else {
-        // Completed writing input bytes.
-        FD_CLR_WRITE(ctx->selectfd, server);
-        shutdown(ctx->selectfd, SHUT_WR);
-        remove_selectfd_context(&server->ctxhead, ctx->selectfd);
+        return;
     }
+
+    // Completed writing input bytes.
+    FD_CLR_WRITE(ctx->selectfd, server);
+    shutdown(ctx->selectfd, SHUT_WR);
+    remove_selectfd_context(&server->ctxhead, ctx->selectfd);
 }
 
 // Read cgi output to cgi_outputbuf.
 void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
-    int z;
-    size_t nread;
-    char readbuf[LK_BUFSIZE_LARGE];
-
-    while (1) {
-        // Incrementally read cgi output into ctx->cgi_outputbuf
-        z = lk_read(ctx->selectfd, readbuf, sizeof(readbuf), &nread);
-        if (nread > 0) {
-            lk_buffer_append(ctx->cgi_outputbuf, readbuf, nread);
-        }
-        if (z == -1) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                lk_print_err("lk_read()");
-            }
-            return;
-        }
-
-        if (z == 0 && nread == 0) {
-            break;
-        }
+    int z = read_buf_bytes(ctx->selectfd, ctx->cgi_outputbuf);
+    if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        return;
+    }
+    if (z == -1) {
+        process_error_response(server, ctx, 500, "Error processing CGI output.");
+        terminate_client_session(server, ctx);
+        return;
     }
 
     // EOF - finished reading cgi output.
-    assert(z == 0 && nread == 0);
+    assert(z == 0);
 
     // Remove cgi output from read list.
     FD_CLR_READ(ctx->selectfd, server);
@@ -801,6 +790,32 @@ int write_buf_bytes(int fd, LKBuffer *buf) {
         &nwrite);
     buf->bytes_cur += nwrite;
     return z;
+}
+
+// Read bytes into buf until no more bytes available to be read.
+// Returns number of bytes read, or 0 for EOF, or -1 for error.
+int read_buf_bytes(int fd, LKBuffer *buf) {
+    int z;
+    char readbuf[LK_BUFSIZE_LARGE];
+    while (1) {
+        z = read(fd, readbuf, sizeof(readbuf));
+        if (z > 0) {
+            lk_buffer_append(buf, readbuf, z);
+            continue;
+        }
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        break;
+    }
+    return z;
+}
+
+int is_nonblocking_error(int z) {
+    if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        return 1;
+    }
+    return 0;
 }
 
 
