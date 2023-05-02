@@ -197,6 +197,7 @@ unsigned short lk_get_sockaddr_port(struct sockaddr *sa);
 int nonblocking_error(int z);
 
 typedef enum {FD_SOCK, FD_FILE} FDType;
+typedef enum {FD_READ, FD_WRITE, FD_READWRITE} FDAction;
 
 int lk_write_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
 int lk_send(int fd, char *buf, size_t count, size_t *nbytes);

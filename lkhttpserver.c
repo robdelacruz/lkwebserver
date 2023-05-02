@@ -46,7 +46,7 @@ int read_path_file(char *home_dir, char *path, LKBuffer *buf);
 char *fileext(char *filepath);
 
 void write_response(LKHttpServer *server, LKContext *ctx);
-void terminate_fd(int fd, FDType fd_type, LKHttpServer *server);
+int terminate_fd(int fd, FDType fd_type, FDAction fd_action, LKHttpServer *server);
 void terminate_client_session(LKHttpServer *server, LKContext *ctx);
 
 void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost);
@@ -166,7 +166,7 @@ int lk_httpserver_serve(LKHttpServer *server) {
                     LKContext *ctx = match_select_ctx(server->ctxhead, selectfd);
                     if (ctx == NULL) {
                         printf("read selectfd %d not in ctx list\n", selectfd);
-                        terminate_fd(selectfd, FD_SOCK, server);
+                        terminate_fd(selectfd, FD_SOCK, FD_READ, server);
                         continue;
                     }
 
@@ -187,7 +187,7 @@ int lk_httpserver_serve(LKHttpServer *server) {
                 LKContext *ctx = match_select_ctx(server->ctxhead, selectfd);
                 if (ctx == NULL) {
                     printf("write selectfd %d not in ctx list\n", selectfd);
-                    terminate_fd(selectfd, FD_SOCK, server);
+                    terminate_fd(selectfd, FD_SOCK, FD_WRITE, server);
                     continue;
                 }
 
@@ -328,8 +328,10 @@ void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
         }
         if (z == -1) {
             lk_print_err("lk_write_buf()");
-            terminate_fd(ctx->cgifd, FD_FILE, server);
-            ctx->cgifd = 0;
+            z = terminate_fd(ctx->cgifd, FD_FILE, FD_WRITE, server);
+            if (z == 0) {
+                ctx->cgifd = 0;
+            }
             remove_selectfd_context(&server->ctxhead, ctx->selectfd);
         }
         return;
@@ -349,8 +351,10 @@ void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
     }
     if (z == -1) {
         lk_print_err("lk_read_buf()");
-        terminate_fd(ctx->cgifd, FD_FILE, server);
-        ctx->cgifd = 0;
+        z = terminate_fd(ctx->cgifd, FD_FILE, FD_READ, server);
+        if (z == 0) {
+            ctx->cgifd = 0;
+        }
         process_error_response(server, ctx, 500, "Error processing CGI output.");
         return;
     }
@@ -359,8 +363,10 @@ void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
     assert(z == 0);
 
     // Remove cgi output from read list.
-    terminate_fd(ctx->cgifd, FD_FILE, server);
-    ctx->cgifd = 0;
+    z = terminate_fd(ctx->cgifd, FD_FILE, FD_READ, server);
+    if (z == 0) {
+        ctx->cgifd = 0;
+    }
 
     parse_cgi_output(ctx->cgi_outputbuf, ctx->resp);
     process_response(server, ctx);
@@ -542,7 +548,7 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
 }
 
 void process_response(LKHttpServer *server, LKContext *ctx) {
-    LKHttpRequest *req = ctx->reqparser->req;
+    LKHttpRequest *req = ctx->req;
     LKHttpResponse *resp = ctx->resp;
 
     lk_httpresponse_finalize(resp);
@@ -554,7 +560,6 @@ void process_response(LKHttpServer *server, LKContext *ctx) {
 
     char time_str[TIME_STRING_SIZE];
     get_localtime_string(time_str, sizeof(time_str));
-
     printf("%s [%s] \"%s %s %s\" %d\n", 
         ctx->client_ipaddr->s, time_str,
         req->method->s, req->uri->s, resp->version->s,
@@ -676,7 +681,7 @@ void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost) {
     int proxyfd = lk_open_connect_socket(targethost, "", NULL);
     if (proxyfd == -1) {
         lk_print_err("lk_open_connect_socket()");
-        terminate_client_session(server, ctx);
+        process_error_response(server, ctx, 500, "Error opening proxy socket.");
         return;
     }
 
@@ -699,7 +704,11 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
         }
         if (z == -1) {
             lk_print_err("lk_send_buf()");
-            terminate_client_session(server, ctx);
+            z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
+            if (z == 0) {
+                ctx->proxyfd = 0;
+            }
+            process_error_response(server, ctx, 500, "Error forwarding request to proxy.");
             return;
         }
     } else if (req->body->bytes_cur < req->body->bytes_len) {
@@ -709,7 +718,11 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
         }
         if (z == -1) {
             lk_print_err("lk_send_buf()");
-            terminate_client_session(server, ctx);
+            z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
+            if (z == 0) {
+                ctx->proxyfd = 0;
+            }
+            process_error_response(server, ctx, 500, "Error forwarding request to proxy.");
             return;
         }
     } else {
@@ -730,26 +743,32 @@ void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
     }
     if (z == -1) {
         lk_print_err("lk_recv_buf()");
-        terminate_client_session(server, ctx);
-        return;
-    }
-    if (z == 0) {
-        FD_CLR_READ(ctx->proxyfd, server);
-        shutdown(ctx->selectfd, SHUT_RD);
-
-        ctx->type = CTX_PROXY_WRITE_RESP;
-        ctx->selectfd = ctx->clientfd;
-        FD_SET_WRITE(ctx->clientfd, server);
-
-        // Close proxyfd as we don't need it anymore.
-        z = close(ctx->proxyfd);
-        if (z == -1) {
-            lk_print_err("close()");
-        }
+        z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_READ, server);
         if (z == 0) {
             ctx->proxyfd = 0;
         }
+        process_error_response(server, ctx, 500, "Error reading proxy response.");
+        return;
     }
+
+    // EOF - finished reading proxy response.
+    assert(z == 0);
+
+    // Remove proxy from read list.
+    z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_READ, server);
+    if (z == 0) {
+        ctx->proxyfd = 0;
+    }
+
+    LKHttpRequest *req = ctx->req;
+    char time_str[TIME_STRING_SIZE];
+    get_localtime_string(time_str, sizeof(time_str));
+    printf("%s [%s] \"%s %s\" --> proxyhost\n",
+        ctx->client_ipaddr->s, time_str, req->method->s, req->uri->s);
+
+    ctx->type = CTX_PROXY_WRITE_RESP;
+    ctx->selectfd = ctx->clientfd;
+    FD_SET_WRITE(ctx->clientfd, server);
 }
 
 void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
@@ -763,7 +782,7 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
         }
         if (z == -1) {
             lk_print_err("lk_send_buf()");
-            terminate_client_session(server, ctx);
+            process_error_response(server, ctx, 500, "Error sending proxy response.");
             return;
         }
     } else {
@@ -773,33 +792,45 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
 }
 
 // Clear fd from select()'s, shutdown, and close.
-void terminate_fd(int fd, FDType fd_type, LKHttpServer *server) {
+int terminate_fd(int fd, FDType fd_type, FDAction fd_action, LKHttpServer *server) {
     int z;
-    FD_CLR_READ(fd, server);
-    FD_CLR_WRITE(fd, server);
+    if (fd_action == FD_READ || fd_action == FD_READWRITE) {
+        FD_CLR_READ(fd, server);
+    }
+    if (fd_action == FD_WRITE || fd_action == FD_READWRITE) {
+        FD_CLR_WRITE(fd, server);
+    }
 
     if (fd_type == FD_SOCK) {
-        z = shutdown(fd, SHUT_RDWR);
+        if (fd_action == FD_READ) {
+            z = shutdown(fd, SHUT_RD);
+        } else if (fd_action == FD_WRITE) {
+            z = shutdown(fd, SHUT_WR);
+        } else {
+            z = shutdown(fd, SHUT_RDWR);
+        }
         if (z == -1) {
-            lk_print_err("terminate_fd shutdown()");
+            //$$ Suppress logging shutdown error because remote sockets close themselves.
+            //lk_print_err("terminate_fd shutdown()");
         }
     }
     z = close(fd);
     if (z == -1) {
         lk_print_err("close()");
     }
+    return z;
 }
 
 // Disconnect from client.
 void terminate_client_session(LKHttpServer *server, LKContext *ctx) {
     if (ctx->clientfd) {
-        terminate_fd(ctx->clientfd, FD_SOCK, server);
+        terminate_fd(ctx->clientfd, FD_SOCK, FD_READWRITE, server);
     }
     if (ctx->cgifd) {
-        terminate_fd(ctx->cgifd, FD_FILE, server);
+        terminate_fd(ctx->cgifd, FD_FILE, FD_READWRITE, server);
     }
     if (ctx->proxyfd) {
-        terminate_fd(ctx->proxyfd, FD_SOCK, server);
+        terminate_fd(ctx->proxyfd, FD_SOCK, FD_READWRITE, server);
     }
     // Remove from linked list and free ctx.
     remove_client_context(&server->ctxhead, ctx->clientfd);
