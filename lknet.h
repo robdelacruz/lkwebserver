@@ -112,6 +112,7 @@ typedef struct lkcontext_s {
     LKHttpResponse *resp;             // http response to be sent
                                       //
     // Used by CTX_READ_CGI:
+    int cgifd;
     LKBuffer *cgi_outputbuf;          // receive cgi stdout bytes here
     LKBuffer *cgi_inputbuf;           // input bytes to pass to cgi stdin
 
@@ -186,23 +187,33 @@ void lk_httpserver_setopt(LKHttpServer *server, LKHttpServerOpt opt, ...);
 int lk_httpserver_serve(LKHttpServer *server);
 
 
-/*** socket helper functions ***/
+/*** Helper functions ***/
 int lk_open_listen_socket(char *host, char *port, int backlog, struct sockaddr *psa);
 int lk_open_connect_socket(char *host, char *port, struct sockaddr *psa);
-int lk_sock_recv(int sock, char *buf, size_t count, size_t *ret_nread);
-int lk_sock_send(int sock, char *buf, size_t count, size_t *ret_nsent);
 void lk_set_sock_timeout(int sock, int nsecs, int ms);
 void lk_set_sock_nonblocking(int sock);
 LKString *lk_get_ipaddr_string(struct sockaddr *sa);
 unsigned short lk_get_sockaddr_port(struct sockaddr *sa);
+int nonblocking_error(int z);
 
+typedef enum {FD_SOCK, FD_FILE} FDType;
 
-/*** Other helper functions ***/
+int lk_write_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
+int lk_send(int fd, char *buf, size_t count, size_t *nbytes);
+int lk_write(int fd, char *buf, size_t count, size_t *nbytes);
 
-// File equivalent of lk_sock_recv()
-int lk_read(int fd, char *buf, size_t count, size_t *ret_nread);
-// File equivalent of lk_sock_send()
-int lk_write(int fd, char *buf, size_t count, size_t *ret_nwrite);
+int lk_read_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
+int lk_recv(int fd, char *buf, size_t count, size_t *nbytes);
+int lk_read(int fd, char *buf, size_t count, size_t *nbytes);
+
+int lk_write_buf_fd(int fd, FDType fd_type, LKBuffer *buf);
+int lk_send_buf(int fd, LKBuffer *buf);
+int lk_write_buf(int fd, LKBuffer *buf);
+
+int lk_read_buf_fd(int fd, FDType fd_type, LKBuffer *buf);
+int lk_recv_buf(int fd, LKBuffer *buf);
+int lk_read_buf(int fd, LKBuffer *buf);
+
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s);
 // Read entire file into buf.

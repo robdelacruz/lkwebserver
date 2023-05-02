@@ -31,6 +31,7 @@ LKContext *lk_context_new() {
     ctx->resp = NULL;
     ctx->reqparser = NULL;
 
+    ctx->cgifd = 0;
     ctx->cgi_outputbuf = NULL;
     ctx->cgi_inputbuf = NULL;
 
@@ -55,6 +56,7 @@ LKContext *create_initial_context(int fd, struct sockaddr_in *sa) {
     ctx->resp = lk_httpresponse_new();
     ctx->reqparser = lk_httprequestparser_new(ctx->req);
 
+    ctx->cgifd = 0;
     ctx->cgi_outputbuf = NULL;
     ctx->cgi_inputbuf = NULL;
 
@@ -99,6 +101,7 @@ void lk_context_free(LKContext *ctx) {
     ctx->reqparser = NULL;
     ctx->req = NULL;
     ctx->resp = NULL;
+    ctx->cgifd = 0;
     ctx->cgi_outputbuf = NULL;
     ctx->cgi_inputbuf = NULL;
     ctx->proxyfd = 0;
