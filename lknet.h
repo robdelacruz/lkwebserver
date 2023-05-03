@@ -59,9 +59,9 @@ typedef struct {
 
 LKSocketReader *lk_socketreader_new(int sock, size_t initial_size);
 void lk_socketreader_free(LKSocketReader *sr);
-int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size_t *ret_nread);
+int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size_t *nbytes);
 int lk_socketreader_recv_buf(LKSocketReader *sr, LKBuffer *buf);
-int lk_socketreader_recv(LKSocketReader *sr, char *dst, size_t count, size_t *ret_nread);
+int lk_socketreader_recv(LKSocketReader *sr, char *dst, size_t count, size_t *nbytes);
 void lk_socketreader_debugprint(LKSocketReader *sr);
 
 
@@ -196,24 +196,62 @@ LKString *lk_get_ipaddr_string(struct sockaddr *sa);
 unsigned short lk_get_sockaddr_port(struct sockaddr *sa);
 int nonblocking_error(int z);
 
+// Function return values:
+// Z_OPEN (fd still open)
+// Z_EOF (end of file)
+// Z_ERR (errno set with error detail)
+// Z_BLOCK (fd blocked, no data)
+#define Z_OPEN 1
+#define Z_EOF 0
+#define Z_ERR -1
+#define Z_BLOCK -2
+
 typedef enum {FD_SOCK, FD_FILE} FDType;
 typedef enum {FD_READ, FD_WRITE, FD_READWRITE} FDAction;
 
-int lk_write_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
-int lk_send(int fd, char *buf, size_t count, size_t *nbytes);
-int lk_write(int fd, char *buf, size_t count, size_t *nbytes);
-
+// Read bytes from nonblocking fd to buf.
+// Returns one of the following:
+//    0 (Z_EOF) for EOF
+//   -1 (Z_ERR) for error
+//   -2 (Z_BLOCK) for blocked socket (no data)
+// On return, nbytes contains the number of bytes read.
 int lk_read_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
 int lk_recv(int fd, char *buf, size_t count, size_t *nbytes);
 int lk_read(int fd, char *buf, size_t count, size_t *nbytes);
 
-int lk_write_buf_fd(int fd, FDType fd_type, LKBuffer *buf);
-int lk_send_buf(int fd, LKBuffer *buf);
-int lk_write_buf(int fd, LKBuffer *buf);
+// Write bytes from buf to nonblocking fd.
+// Returns one of the following:
+//    1 (Z_OPEN) for socket open (data available)
+//   -1 (Z_ERR) for error
+//   -2 (Z_BLOCK) for blocked socket (no data)
+// On return, nbytes contains the number of bytes written.
+int lk_write_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
+int lk_send(int fd, char *buf, size_t count, size_t *nbytes);
+int lk_write(int fd, char *buf, size_t count, size_t *nbytes);
 
+// Read nonblocking fd bytes to buf.
+// Returns one of the following:
+//    0 (Z_EOF) for EOF
+//   -1 (Z_ERR) for error
+//   -2 (Z_BLOCK) for blocked socket (no data)
+//
+// Note: This keeps track of last buf position read.
+// Used to cumulatively read data into buf.
 int lk_read_buf_fd(int fd, FDType fd_type, LKBuffer *buf);
 int lk_recv_buf(int fd, LKBuffer *buf);
 int lk_read_buf(int fd, LKBuffer *buf);
+
+// Write buf bytes to nonblocking fd.
+// Returns one of the following:
+//    1 (Z_OPEN) for socket open (data available)
+//   -1 (Z_ERR) for error
+//   -2 (Z_BLOCK) for blocked socket (no data)
+//
+// Note: This keeps track of last buf position written.
+// Used to cumulatively write data into buf.
+int lk_write_buf_fd(int fd, FDType fd_type, LKBuffer *buf);
+int lk_send_buf(int fd, LKBuffer *buf);
+int lk_write_buf(int fd, LKBuffer *buf);
 
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s);

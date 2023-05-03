@@ -323,10 +323,10 @@ void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
     // Write as much input bytes as the cgi program will receive.
     if (buf->bytes_cur < buf->bytes_len) {
         int z = lk_write_buf(ctx->selectfd, buf);
-        if (nonblocking_error(z)) {
+        if (z == Z_BLOCK) {
             return;
         }
-        if (z == -1) {
+        if (z == Z_ERR) {
             lk_print_err("lk_write_buf()");
             z = terminate_fd(ctx->cgifd, FD_FILE, FD_WRITE, server);
             if (z == 0) {
@@ -346,10 +346,10 @@ void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
 // Read cgi output to cgi_outputbuf.
 void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
     int z = lk_read_buf(ctx->selectfd, ctx->cgi_outputbuf);
-    if (nonblocking_error(z)) {
+    if (z == Z_BLOCK) {
         return;
     }
-    if (z == -1) {
+    if (z == Z_ERR) {
         lk_print_err("lk_read_buf()");
         z = terminate_fd(ctx->cgifd, FD_FILE, FD_READ, server);
         if (z == 0) {
@@ -653,20 +653,20 @@ void write_response(LKHttpServer *server, LKContext *ctx) {
     // Send response head bytes first, then response body bytes.
     if (resp->head->bytes_cur < resp->head->bytes_len) {
         int z = lk_send_buf(ctx->selectfd, resp->head);
-        if (nonblocking_error(z)) {
+        if (z == Z_BLOCK) {
             return;
         }
-        if (z == -1) {
+        if (z == Z_ERR) {
             lk_print_err("lk_send_buf()");
             terminate_client_session(server, ctx);
             return;
         }
     } else if (resp->body->bytes_cur < resp->body->bytes_len) {
         int z = lk_send_buf(ctx->selectfd, resp->body);
-        if (nonblocking_error(z)) {
+        if (z == Z_BLOCK) {
             return;
         }
-        if (z == -1) {
+        if (z == Z_ERR) {
             lk_print_err("lk_send_buf()");
             terminate_client_session(server, ctx);
             return;
@@ -699,10 +699,10 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
     // Send request head bytes first, then request body bytes.
     if (req->head->bytes_cur < req->head->bytes_len) {
         int z = lk_send_buf(ctx->selectfd, req->head);
-        if (nonblocking_error(z)) {
+        if (z == Z_BLOCK) {
             return;
         }
-        if (z == -1) {
+        if (z == Z_ERR) {
             lk_print_err("lk_send_buf()");
             z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
             if (z == 0) {
@@ -713,10 +713,10 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
         }
     } else if (req->body->bytes_cur < req->body->bytes_len) {
         int z = lk_send_buf(ctx->selectfd, req->body);
-        if (nonblocking_error(z)) {
+        if (z == Z_BLOCK) {
             return;
         }
-        if (z == -1) {
+        if (z == Z_ERR) {
             lk_print_err("lk_send_buf()");
             z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
             if (z == 0) {
@@ -738,10 +738,10 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
 
 void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
     int z = lk_recv_buf(ctx->selectfd, ctx->proxy_respbuf);
-    if (nonblocking_error(z)) {
+    if (z == Z_BLOCK) {
         return;
     }
-    if (z == -1) {
+    if (z == Z_ERR) {
         lk_print_err("lk_recv_buf()");
         z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_READ, server);
         if (z == 0) {
@@ -777,10 +777,10 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
     // Send as much response bytes as the client will receive.
     if (buf->bytes_cur < buf->bytes_len) {
         int z = lk_send_buf(ctx->selectfd, buf);
-        if (nonblocking_error(z)) {
+        if (z == Z_BLOCK) {
             return;
         }
-        if (z == -1) {
+        if (z == Z_ERR) {
             lk_print_err("lk_send_buf()");
             process_error_response(server, ctx, 500, "Error sending proxy response.");
             return;
