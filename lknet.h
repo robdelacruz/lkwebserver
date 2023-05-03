@@ -59,9 +59,8 @@ typedef struct {
 
 LKSocketReader *lk_socketreader_new(int sock, size_t initial_size);
 void lk_socketreader_free(LKSocketReader *sr);
-int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size_t *nbytes);
-int lk_socketreader_recv_buf(LKSocketReader *sr, LKBuffer *buf);
-int lk_socketreader_recv(LKSocketReader *sr, char *dst, size_t count, size_t *nbytes);
+int lk_socketreader_readline(LKSocketReader *sr, LKString *line);
+int lk_socketreader_recv(LKSocketReader *sr, LKBuffer *buf);
 void lk_socketreader_debugprint(LKSocketReader *sr);
 
 
@@ -78,8 +77,8 @@ typedef struct {
 LKHttpRequestParser *lk_httprequestparser_new(LKHttpRequest *req);
 void lk_httprequestparser_free(LKHttpRequestParser *parser);
 void lk_httprequestparser_reset(LKHttpRequestParser *parser);
-void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line);
-void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, size_t buf_len);
+void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, LKString *line);
+void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, LKBuffer *buf);
 
 /*** CGI Parser ***/
 void parse_cgi_output(LKBuffer *buf, LKHttpResponse *resp);
@@ -209,27 +208,18 @@ int nonblocking_error(int z);
 typedef enum {FD_SOCK, FD_FILE} FDType;
 typedef enum {FD_READ, FD_WRITE, FD_READWRITE} FDAction;
 
-// Read bytes from nonblocking fd to buf.
+// Read nonblocking fd count bytes to buf.
 // Returns one of the following:
+//    1 (Z_OPEN) for socket open (data available)
 //    0 (Z_EOF) for EOF
 //   -1 (Z_ERR) for error
 //   -2 (Z_BLOCK) for blocked socket (no data)
 // On return, nbytes contains the number of bytes read.
-int lk_read_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
-int lk_recv(int fd, char *buf, size_t count, size_t *nbytes);
-int lk_read(int fd, char *buf, size_t count, size_t *nbytes);
+int lk_read(int fd, FDType fd_type, LKBuffer *buf, size_t count, size_t *nbytes);
+int lk_read_sock(int fd, LKBuffer *buf, size_t count, size_t *nbytes);
+int lk_read_file(int fd, LKBuffer *buf, size_t count, size_t *nbytes);
 
-// Write bytes from buf to nonblocking fd.
-// Returns one of the following:
-//    1 (Z_OPEN) for socket open (data available)
-//   -1 (Z_ERR) for error
-//   -2 (Z_BLOCK) for blocked socket (no data)
-// On return, nbytes contains the number of bytes written.
-int lk_write_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes);
-int lk_send(int fd, char *buf, size_t count, size_t *nbytes);
-int lk_write(int fd, char *buf, size_t count, size_t *nbytes);
-
-// Read nonblocking fd bytes to buf.
+// Read all available nonblocking fd bytes to buffer.
 // Returns one of the following:
 //    0 (Z_EOF) for EOF
 //   -1 (Z_ERR) for error
@@ -237,21 +227,31 @@ int lk_write(int fd, char *buf, size_t count, size_t *nbytes);
 //
 // Note: This keeps track of last buf position read.
 // Used to cumulatively read data into buf.
-int lk_read_buf_fd(int fd, FDType fd_type, LKBuffer *buf);
-int lk_recv_buf(int fd, LKBuffer *buf);
-int lk_read_buf(int fd, LKBuffer *buf);
+int lk_read_all(int fd, FDType fd_type, LKBuffer *buf);
+int lk_read_all_sock(int fd, LKBuffer *buf);
+int lk_read_all_file(int fd, LKBuffer *buf);
+
+// Write count buf bytes to nonblocking fd.
+// Returns one of the following:
+//    1 (Z_OPEN) for socket open
+//   -1 (Z_ERR) for error
+//   -2 (Z_BLOCK) for blocked socket (no data)
+// On return, nbytes contains the number of bytes written.
+int lk_write(int fd, FDType fd_type, LKBuffer *buf, size_t count, size_t *nbytes);
+int lk_write_sock(int fd, LKBuffer *buf, size_t count, size_t *nbytes);
+int lk_write_file(int fd, LKBuffer *buf, size_t count, size_t *nbytes);
 
 // Write buf bytes to nonblocking fd.
 // Returns one of the following:
-//    1 (Z_OPEN) for socket open (data available)
+//    1 (Z_OPEN) for socket open
 //   -1 (Z_ERR) for error
 //   -2 (Z_BLOCK) for blocked socket (no data)
 //
 // Note: This keeps track of last buf position written.
 // Used to cumulatively write data into buf.
-int lk_write_buf_fd(int fd, FDType fd_type, LKBuffer *buf);
-int lk_send_buf(int fd, LKBuffer *buf);
-int lk_write_buf(int fd, LKBuffer *buf);
+int lk_write_all(int fd, FDType fd_type, LKBuffer *buf);
+int lk_write_all_sock(int fd, LKBuffer *buf);
+int lk_write_all_file(int fd, LKBuffer *buf);
 
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s);

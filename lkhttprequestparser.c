@@ -46,11 +46,11 @@ void lk_httprequestparser_reset(LKHttpRequestParser *parser) {
 // You can check the state of the parser through the following fields:
 // parser->head_complete   Request Line and Headers complete
 // parser->body_complete   httprequest is complete
-void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line) {
+void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, LKString *line) {
     // If there's a previous partial line, combine it with current line.
     if (parser->partial_line->s_len > 0) {
-        lk_string_append(parser->partial_line, line);
-        if (ends_with_newline(parser->partial_line->s)) {
+        lk_string_append(parser->partial_line, line->s);
+        if (lk_string_ends_with(parser->partial_line, "\n")) {
             parse_line(parser, parser->partial_line->s);
             lk_string_assign(parser->partial_line, "");
         }
@@ -59,12 +59,12 @@ void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, char *line) {
 
     // If current line is only partial line (not newline terminated), remember it for
     // next read.
-    if (!ends_with_newline(line)) {
-        lk_string_assign(parser->partial_line, line);
+    if (!lk_string_ends_with(line, "\n")) {
+        lk_string_assign(parser->partial_line, line->s);
         return;
     }
 
-    parse_line(parser, line);
+    parse_line(parser, line->s);
 }
 
 void parse_line(LKHttpRequestParser *parser, char *line) {
@@ -196,7 +196,7 @@ static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpReq
 // You can check the state of the parser through the following fields:
 // parser->head_complete   Request Line and Headers complete
 // parser->body_complete   httprequest is complete
-void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, size_t buf_len) {
+void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, LKBuffer *buf) {
     // Head should be parsed line by line. Call parse_line() instead.
     if (!parser->head_complete) {
         return;
@@ -205,7 +205,7 @@ void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, char *buf, si
         return;
     }
 
-    lk_buffer_append(parser->req->body, buf, buf_len);
+    lk_buffer_append(parser->req->body, buf->bytes, buf->bytes_len);
     if (parser->req->body->bytes_len >= parser->content_length) {
         parser->body_complete = 1;
     }

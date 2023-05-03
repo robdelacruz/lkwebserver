@@ -28,6 +28,17 @@ void lk_buffer_free(LKBuffer *buf) {
     free(buf);
 }
 
+void lk_buffer_resize(LKBuffer *buf, size_t bytes_size) {
+    buf->bytes_size = bytes_size;
+    if (buf->bytes_len > buf->bytes_size) {
+        buf->bytes_len = buf->bytes_size;
+    }
+    if (buf->bytes_cur >= buf->bytes_len) {
+        buf->bytes_cur = buf->bytes_len-1;
+    }
+    buf->bytes = realloc(buf->bytes, buf->bytes_size);
+}
+
 void lk_buffer_clear(LKBuffer *buf) {
     memset(buf->bytes, 0, buf->bytes_len);
     buf->bytes_len = 0;

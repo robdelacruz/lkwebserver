@@ -184,23 +184,27 @@ int nonblocking_error(int z) {
     return 0;
 }
 
-// Read bytes from nonblocking fd to buf.
+// Read nonblocking fd count bytes to buf.
 // Returns one of the following:
-//    1 (Z_OPEN) for socket open (data available)
+//    1 (Z_OPEN) for socket open
 //    0 (Z_EOF) for EOF
 //   -1 (Z_ERR) for error
 //   -2 (Z_BLOCK) for blocked socket (no data)
 // On return, nbytes contains the number of bytes read.
-//
-// Note: use open(O_NONBLOCK) to open nonblocking file.
-int lk_read_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes) {
+int lk_read(int fd, FDType fd_type, LKBuffer *buf, size_t count, size_t *nbytes) {
     int z;
+    char readbuf[LK_BUFSIZE_LARGE];
+
     size_t nread = 0;
     while (nread < count) {
+        // read minimum of sizeof(readbuf) and count-nread
+        int nblock = count-nread;
+        if (nblock > sizeof(readbuf)) nblock = sizeof(readbuf);
+
         if (fd_type == FD_SOCK) {
-            z = recv(fd, buf+nread, count-nread, MSG_DONTWAIT);
+            z = recv(fd, readbuf, nblock, MSG_DONTWAIT);
         } else {
-            z = read(fd, buf+nread, count-nread);
+            z = read(fd, readbuf, nblock);
         }
         // EOF
         if (z == 0) {
@@ -221,6 +225,7 @@ int lk_read_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes) 
             break;
         }
         assert(z > 0);
+        lk_buffer_append(buf, readbuf, z);
         nread += z;
     }
     if (z > 0) {
@@ -229,60 +234,14 @@ int lk_read_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes) 
     *nbytes = nread;
     return z;
 }
-int lk_recv(int fd, char *buf, size_t count, size_t *nbytes) {
-    return lk_read_fd(fd, FD_SOCK, buf, count, nbytes);
+int lk_read_sock(int fd, LKBuffer *buf, size_t count, size_t *nbytes) {
+    return lk_read(fd, FD_SOCK, buf, count, nbytes);
 }
-int lk_read(int fd, char *buf, size_t count, size_t *nbytes) {
-    return lk_read_fd(fd, FD_FILE, buf, count, nbytes);
-}
-
-// Write bytes from buf to nonblocking fd.
-// Returns one of the following:
-//    1 (Z_OPEN) for socket open (data available)
-//   -1 (Z_ERR) for error
-//   -2 (Z_BLOCK) for blocked socket (no data)
-// On return, nbytes contains the number of bytes written.
-//
-// Note: use open(O_NONBLOCK) to open nonblocking file.
-int lk_write_fd(int fd, FDType fd_type, char *buf, size_t count, size_t *nbytes) {
-    int z;
-    size_t nwrite = 0;
-    while (nwrite < count) {
-        if (fd_type == FD_SOCK) {
-            z = send(fd, buf+nwrite, count-nwrite, MSG_DONTWAIT | MSG_NOSIGNAL);
-        } else {
-            z = write(fd, buf+nwrite, count-nwrite);
-        }
-        // interrupt occured during read, retry read.
-        if (z == -1 && errno == EINTR) {
-            continue;
-        }
-        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            z = Z_BLOCK;
-            break;
-        }
-        if (z == -1) {
-            // errno is set to EPIPE if socket was shutdown
-            z = Z_ERR;
-            break;
-        }
-        assert(z >= 0);
-        nwrite += z;
-    }
-    if (z >= 0) {
-        z = Z_OPEN;
-    }
-    *nbytes = nwrite;
-    return z;
-}
-int lk_send(int fd, char *buf, size_t count, size_t *nbytes) {
-    return lk_write_fd(fd, FD_SOCK, buf, count, nbytes);
-}
-int lk_write(int fd, char *buf, size_t count, size_t *nbytes) {
-    return lk_write_fd(fd, FD_FILE, buf, count, nbytes);
+int lk_read_file(int fd, LKBuffer *buf, size_t count, size_t *nbytes) {
+    return lk_read(fd, FD_FILE, buf, count, nbytes);
 }
 
-// Read nonblocking fd bytes to buf.
+// Read all available nonblocking fd bytes to buffer.
 // Returns one of the following:
 //    0 (Z_EOF) for EOF
 //   -1 (Z_ERR) for error
@@ -290,7 +249,7 @@ int lk_write(int fd, char *buf, size_t count, size_t *nbytes) {
 //
 // Note: This keeps track of last buf position read.
 // Used to cumulatively read data into buf.
-int lk_read_buf_fd(int fd, FDType fd_type, LKBuffer *buf) {
+int lk_read_all(int fd, FDType fd_type, LKBuffer *buf) {
     int z;
     char readbuf[LK_BUFSIZE_LARGE];
     while (1) {
@@ -322,35 +281,110 @@ int lk_read_buf_fd(int fd, FDType fd_type, LKBuffer *buf) {
     assert(z <= 0);
     return z;
 }
-int lk_recv_buf(int fd, LKBuffer *buf) {
-    return lk_read_buf_fd(fd, FD_SOCK, buf);
+int lk_read_all_sock(int fd, LKBuffer *buf) {
+    return lk_read_all(fd, FD_SOCK, buf);
 }
-int lk_read_buf(int fd, LKBuffer *buf) {
-    return lk_read_buf_fd(fd, FD_FILE, buf);
+int lk_read_all_file(int fd, LKBuffer *buf) {
+    return lk_read_all(fd, FD_FILE, buf);
+}
+
+
+// Write count buf bytes to nonblocking fd.
+// Returns one of the following:
+//    1 (Z_OPEN) for socket open
+//   -1 (Z_ERR) for error
+//   -2 (Z_BLOCK) for blocked socket (no data)
+// On return, nbytes contains the number of bytes written.
+//
+// Note: use open(O_NONBLOCK) to open nonblocking file.
+int lk_write(int fd, FDType fd_type, LKBuffer *buf, size_t count, size_t *nbytes) {
+    int z;
+    if (count > buf->bytes_len) {
+        count = buf->bytes_len;
+    }
+    size_t nwrite = 0;
+    while (nwrite < count) {
+        if (fd_type == FD_SOCK) {
+            z = send(fd, buf->bytes+nwrite, count-nwrite, MSG_DONTWAIT | MSG_NOSIGNAL);
+        } else {
+            z = write(fd, buf->bytes+nwrite, count-nwrite);
+        }
+        // interrupt occured during read, retry read.
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            z = Z_BLOCK;
+            break;
+        }
+        if (z == -1) {
+            // errno is set to EPIPE if socket was shutdown
+            z = Z_ERR;
+            break;
+        }
+        assert(z >= 0);
+        nwrite += z;
+    }
+    if (z >= 0) {
+        z = Z_OPEN;
+    }
+    *nbytes = nwrite;
+    return z;
+}
+int lk_write_sock(int fd, LKBuffer *buf, size_t count, size_t *nbytes) {
+    return lk_write(fd, FD_SOCK, buf, count, nbytes);
+}
+int lk_write_file(int fd, LKBuffer *buf, size_t count, size_t *nbytes) {
+    return lk_write(fd, FD_FILE, buf, count, nbytes);
 }
 
 // Write buf bytes to nonblocking fd.
 // Returns one of the following:
-//    1 (Z_OPEN) for socket open (data available)
+//    1 (Z_OPEN) for socket open
 //   -1 (Z_ERR) for error
 //   -2 (Z_BLOCK) for blocked socket (no data)
 //
 // Note: This keeps track of last buf position written.
 // Used to cumulatively write data into buf.
-int lk_write_buf_fd(int fd, FDType fd_type, LKBuffer *buf) {
-    size_t nsent = 0;
-    int z = lk_write_fd(fd, fd_type,
-                        buf->bytes + buf->bytes_cur,
-                        buf->bytes_len - buf->bytes_cur,
-                        &nsent);
-    buf->bytes_cur += nsent;
+int lk_write_all(int fd, FDType fd_type, LKBuffer *buf) {
+    int z;
+    while (buf->bytes_cur < buf->bytes_len) {
+        if (fd_type == FD_SOCK) {
+            z = send(fd,
+                     buf->bytes + buf->bytes_cur, 
+                     buf->bytes_len - buf->bytes_cur,
+                     MSG_DONTWAIT | MSG_NOSIGNAL);
+        } else {
+            z = write(fd,
+                      buf->bytes + buf->bytes_cur, 
+                      buf->bytes_len - buf->bytes_cur);
+        }
+        // interrupt occured during read, retry read.
+        if (z == -1 && errno == EINTR) {
+            continue;
+        }
+        if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            z = Z_BLOCK;
+            break;
+        }
+        if (z == -1) {
+            // errno is set to EPIPE if socket was shutdown
+            z = Z_ERR;
+            break;
+        }
+        assert(z >= 0);
+        buf->bytes_cur += z;
+    }
+    if (z >= 0) {
+        z = Z_OPEN;
+    }
     return z;
 }
-int lk_send_buf(int fd, LKBuffer *buf) {
-    return lk_write_buf_fd(fd, FD_SOCK, buf);
+int lk_write_all_sock(int fd, LKBuffer *buf) {
+    return lk_write_all(fd, FD_SOCK, buf);
 }
-int lk_write_buf(int fd, LKBuffer *buf) {
-    return lk_write_buf_fd(fd, FD_FILE, buf);
+int lk_write_all_file(int fd, LKBuffer *buf) {
+    return lk_write_all(fd, FD_FILE, buf);
 }
 
 /** lksocketreader functions **/
@@ -379,115 +413,79 @@ void lk_socketreader_free(LKSocketReader *sr) {
     free(sr);
 }
 
-// Read one line from buffered socket, including the \n char, \0 terminated.
-// Return 0 for success, -1 for error.
-// On return, nbytes contains the number of bytes received.
-int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size_t *nbytes) {
-    assert(dst_len > 2); // Reserve space for \n and \0.
+// Read one line from buffered socket including the \n char if present.
+// Function return values:
+// Z_OPEN (fd still open)
+// Z_EOF (end of file)
+// Z_ERR (errno set with error detail)
+// Z_BLOCK (fd blocked, no data)
+int lk_socketreader_readline(LKSocketReader *sr, LKString *line) {
+    int z = Z_OPEN;
     assert(sr->buf_size >= sr->buf_len);
     assert(sr->buf_len >= sr->next_read_pos);
 
+    lk_string_assign(line, "");
+
     if (sr->sockclosed) {
-        *nbytes = 0;
-        return 0;
-    }
-    if (dst_len <= 2) {
-        *nbytes = 0;
-        errno = EINVAL;
-        return -1;
+        return Z_EOF;
     }
 
-    size_t nread = 0;
-    while (nread < dst_len-1) { // leave space for null terminator
+    while (1) { // leave space for null terminator
         // If no buffer chars available, read from socket.
         if (sr->next_read_pos >= sr->buf_len) {
             memset(sr->buf, '*', sr->buf_size); // initialize for debugging purposes.
-            int z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT);
+            z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT | MSG_NOSIGNAL);
             // socket closed, no more data
             if (z == 0) {
                 sr->sockclosed = 1;
+                z = Z_EOF;
                 break;
             }
             // any other error
-            if (z == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                assert(nread <= dst_len-1);
-                dst[nread] = '\0';
-                *nbytes = nread;
-                return z;
+            if (z == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                return Z_BLOCK;
             }
+            if (z == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                return Z_ERR;
+            }
+            assert(z > 0);
             sr->buf_len = z;
             sr->next_read_pos = 0;
+            z = Z_OPEN;
         }
 
         // Copy unread buffer bytes into dst until a '\n' char.
-        while (nread < dst_len-1) {
+        while (1) {
             if (sr->next_read_pos >= sr->buf_len) {
                 break;
             }
-            dst[nread] = sr->buf[sr->next_read_pos];
-            nread++;
+            char ch = sr->buf[sr->next_read_pos];
+            lk_string_append_char(line, ch);
             sr->next_read_pos++;
 
-            if (dst[nread-1] == '\n') {
+            if (ch == '\n') {
                 goto readline_end;
             }
         }
     }
 
 readline_end:
-    assert(nread <= dst_len-1);
-    dst[nread] = '\0';
-
-    *nbytes = nread;
-    return 0;
-}
-
-int lk_socketreader_recv_buf(LKSocketReader *sr, LKBuffer *buf) {
-    // Copy any unread buffer bytes into buf.
-    if (sr->next_read_pos < sr->buf_len) {
-        int ncopy = sr->buf_len - sr->next_read_pos;
-        lk_buffer_append(buf, sr->buf + sr->next_read_pos, ncopy);
-    }
-
-    int z = lk_recv_buf(sr->sock, buf);
-    if (z == Z_EOF) {
-        sr->sockclosed = 1;
-    }
+    assert(z <= Z_OPEN);
     return z;
 }
 
-int lk_socketreader_recv(LKSocketReader *sr, char *dst, size_t count, size_t *nbytes) {
-    size_t nread = 0;
-
-    // Copy any unread buffer bytes into dst.
+int lk_socketreader_recv(LKSocketReader *sr, LKBuffer *buf) {
+    // Append any unread buffer bytes into buf.
     if (sr->next_read_pos < sr->buf_len) {
         int ncopy = sr->buf_len - sr->next_read_pos;
-        if (ncopy > count) {
-            ncopy = count;
-        }
-        memcpy(dst, sr->buf + sr->next_read_pos, ncopy);
+        lk_buffer_append(buf, sr->buf + sr->next_read_pos, ncopy);
         sr->next_read_pos += ncopy;
-        nread += ncopy;
     }
 
-    // Read remaining bytes from socket until count reached.
-    assert(count >= nread);
-    if (count == nread) {
-        *nbytes = nread;
-        return 0;
-    }
-
-    if (sr->sockclosed) {
-        *nbytes = nread;
-        return 0;
-    }
-    size_t sock_nread = 0;
-    int z = lk_recv(sr->sock, dst, count-nread, &sock_nread);
+    int z = lk_read_all_sock(sr->sock, buf);
     if (z == Z_BLOCK) {
         sr->sockclosed = 1;
     }
-    nread += sock_nread;
-    *nbytes = nread;
     return z;
 }
 

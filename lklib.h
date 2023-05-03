@@ -93,6 +93,7 @@ typedef struct {
 
 LKBuffer *lk_buffer_new(size_t bytes_size);
 void lk_buffer_free(LKBuffer *buf);
+void lk_buffer_resize(LKBuffer *buf, size_t bytes_size);
 void lk_buffer_clear(LKBuffer *buf);
 int lk_buffer_append(LKBuffer *buf, char *bytes, size_t len);
 int lk_buffer_append_sz(LKBuffer *buf, char *s);

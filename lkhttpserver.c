@@ -276,28 +276,26 @@ void set_cgi_env2(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
 }
 
 void read_request(LKHttpServer *server, LKContext *ctx) {
-    char buf[LK_BUFSIZE_LARGE];
-    size_t nread;
+    //$$ Replace this later with code that doesn't allocate memory.
+    LKString *line = lk_string_new("");
+    LKBuffer *buf = lk_buffer_new(0);
     int z = 0;
 
     while (1) {
         if (!ctx->reqparser->head_complete) {
-            z = lk_socketreader_readline(ctx->sr, buf, sizeof(buf), &nread);
-            if (z == -1) {
+            z = lk_socketreader_readline(ctx->sr, line);
+            if (z == Z_ERR) {
                 lk_print_err("lksocketreader_readline()");
+                break;
             }
-            if (nread > 0) {
-                assert(buf[nread] == '\0');
-                lk_httprequestparser_parse_line(ctx->reqparser, buf);
-            }
+            lk_httprequestparser_parse_line(ctx->reqparser, line);
         } else {
-            z = lk_socketreader_recv(ctx->sr, buf, sizeof(buf), &nread);
-            if (z == -1) {
+            z = lk_socketreader_recv(ctx->sr, buf);
+            if (z == Z_ERR) {
                 lk_print_err("lksocketreader_readbytes()");
+                break;
             }
-            if (nread > 0) {
-                lk_httprequestparser_parse_bytes(ctx->reqparser, buf, nread);
-            }
+            lk_httprequestparser_parse_bytes(ctx->reqparser, buf);
         }
         // No more data coming in.
         if (ctx->sr->sockclosed) {
@@ -309,10 +307,13 @@ void read_request(LKHttpServer *server, LKContext *ctx) {
             process_request(server, ctx);
             break;
         }
-        if (z == -1 || nread == 0) {
+        if (z != Z_OPEN) {
             break;
         }
     }
+
+    lk_string_free(line);
+    lk_buffer_free(buf);
 }
 
 // Send cgi_inputbuf input bytes to cgi program stdin set in selectfd.
@@ -322,12 +323,12 @@ void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
 
     // Write as much input bytes as the cgi program will receive.
     if (buf->bytes_cur < buf->bytes_len) {
-        int z = lk_write_buf(ctx->selectfd, buf);
+        int z = lk_write_all_file(ctx->selectfd, buf);
         if (z == Z_BLOCK) {
             return;
         }
         if (z == Z_ERR) {
-            lk_print_err("lk_write_buf()");
+            lk_print_err("lk_write_all_file()");
             z = terminate_fd(ctx->cgifd, FD_FILE, FD_WRITE, server);
             if (z == 0) {
                 ctx->cgifd = 0;
@@ -345,12 +346,12 @@ void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
 
 // Read cgi output to cgi_outputbuf.
 void read_cgi_output(LKHttpServer *server, LKContext *ctx) {
-    int z = lk_read_buf(ctx->selectfd, ctx->cgi_outputbuf);
+    int z = lk_read_all_file(ctx->selectfd, ctx->cgi_outputbuf);
     if (z == Z_BLOCK) {
         return;
     }
     if (z == Z_ERR) {
-        lk_print_err("lk_read_buf()");
+        lk_print_err("lk_read_all_file()");
         z = terminate_fd(ctx->cgifd, FD_FILE, FD_READ, server);
         if (z == 0) {
             ctx->cgifd = 0;
@@ -652,22 +653,22 @@ void write_response(LKHttpServer *server, LKContext *ctx) {
     // Send as much response bytes as the client will receive.
     // Send response head bytes first, then response body bytes.
     if (resp->head->bytes_cur < resp->head->bytes_len) {
-        int z = lk_send_buf(ctx->selectfd, resp->head);
+        int z = lk_write_all_sock(ctx->selectfd, resp->head);
         if (z == Z_BLOCK) {
             return;
         }
         if (z == Z_ERR) {
-            lk_print_err("lk_send_buf()");
+            lk_print_err("lk_write_all_sock()");
             terminate_client_session(server, ctx);
             return;
         }
     } else if (resp->body->bytes_cur < resp->body->bytes_len) {
-        int z = lk_send_buf(ctx->selectfd, resp->body);
+        int z = lk_write_all_sock(ctx->selectfd, resp->body);
         if (z == Z_BLOCK) {
             return;
         }
         if (z == Z_ERR) {
-            lk_print_err("lk_send_buf()");
+            lk_print_err("lk_write_all_sock()");
             terminate_client_session(server, ctx);
             return;
         }
@@ -698,12 +699,12 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
     // Send as much request bytes as the proxy will receive.
     // Send request head bytes first, then request body bytes.
     if (req->head->bytes_cur < req->head->bytes_len) {
-        int z = lk_send_buf(ctx->selectfd, req->head);
+        int z = lk_write_all_sock(ctx->selectfd, req->head);
         if (z == Z_BLOCK) {
             return;
         }
         if (z == Z_ERR) {
-            lk_print_err("lk_send_buf()");
+            lk_print_err("lk_write_all_sock()");
             z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
             if (z == 0) {
                 ctx->proxyfd = 0;
@@ -712,12 +713,12 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
             return;
         }
     } else if (req->body->bytes_cur < req->body->bytes_len) {
-        int z = lk_send_buf(ctx->selectfd, req->body);
+        int z = lk_write_all_sock(ctx->selectfd, req->body);
         if (z == Z_BLOCK) {
             return;
         }
         if (z == Z_ERR) {
-            lk_print_err("lk_send_buf()");
+            lk_print_err("lk_write_all_sock()");
             z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
             if (z == 0) {
                 ctx->proxyfd = 0;
@@ -737,12 +738,12 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
 }
 
 void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
-    int z = lk_recv_buf(ctx->selectfd, ctx->proxy_respbuf);
+    int z = lk_read_all_sock(ctx->selectfd, ctx->proxy_respbuf);
     if (z == Z_BLOCK) {
         return;
     }
     if (z == Z_ERR) {
-        lk_print_err("lk_recv_buf()");
+        lk_print_err("lk_read_all_sock()");
         z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_READ, server);
         if (z == 0) {
             ctx->proxyfd = 0;
@@ -776,12 +777,12 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
 
     // Send as much response bytes as the client will receive.
     if (buf->bytes_cur < buf->bytes_len) {
-        int z = lk_send_buf(ctx->selectfd, buf);
+        int z = lk_write_all_sock(ctx->selectfd, buf);
         if (z == Z_BLOCK) {
             return;
         }
         if (z == Z_ERR) {
-            lk_print_err("lk_send_buf()");
+            lk_print_err("lk_write_all_sock()");
             process_error_response(server, ctx, 500, "Error sending proxy response.");
             return;
         }
