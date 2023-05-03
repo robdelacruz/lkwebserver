@@ -291,7 +291,7 @@ void read_request(LKHttpServer *server, LKContext *ctx) {
                 lk_httprequestparser_parse_line(ctx->reqparser, buf);
             }
         } else {
-            z = lk_socketreader_readbytes(ctx->sr, buf, sizeof(buf), &nread);
+            z = lk_socketreader_recv(ctx->sr, buf, sizeof(buf), &nread);
             if (z == -1) {
                 lk_print_err("lksocketreader_readbytes()");
             }

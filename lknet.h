@@ -60,8 +60,8 @@ typedef struct {
 LKSocketReader *lk_socketreader_new(int sock, size_t initial_size);
 void lk_socketreader_free(LKSocketReader *sr);
 int lk_socketreader_readline(LKSocketReader *sr, char *dst, size_t dst_len, size_t *ret_nread);
-int lk_socketreader_readbytes(LKSocketReader *sr, char *dst, size_t count, size_t *ret_nread);
-int lk_socketreader_recv(LKSocketReader *sr, char *buf, size_t count, size_t *ret_nread);
+int lk_socketreader_recv_buf(LKSocketReader *sr, LKBuffer *buf);
+int lk_socketreader_recv(LKSocketReader *sr, char *dst, size_t count, size_t *ret_nread);
 void lk_socketreader_debugprint(LKSocketReader *sr);
 
 
