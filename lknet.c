@@ -391,25 +391,18 @@ int lk_write_all_file(int fd, LKBuffer *buf) {
 
 LKSocketReader *lk_socketreader_new(int sock, size_t buf_size) {
     LKSocketReader *sr = malloc(sizeof(LKSocketReader));
-
     if (buf_size == 0) {
         buf_size = 1024;
     }
     sr->sock = sock;
-    sr->buf_size = buf_size;
-    sr->buf = malloc(buf_size);
-    sr->buf_len = 0;
-    sr->next_read_pos = 0;
+    sr->buf = lk_buffer_new(buf_size);
     sr->sockclosed = 0;
-    memset(sr->buf, '*', sr->buf_size); // initialize for debugging purposes.
-
     return sr;
 }
 
 void lk_socketreader_free(LKSocketReader *sr) {
-    free(sr->buf);
+    lk_buffer_free(sr->buf);
     sr->buf = NULL;
-
     free(sr);
 }
 
@@ -421,20 +414,18 @@ void lk_socketreader_free(LKSocketReader *sr) {
 // Z_BLOCK (fd blocked, no data)
 int lk_socketreader_readline(LKSocketReader *sr, LKString *line) {
     int z = Z_OPEN;
-    assert(sr->buf_size >= sr->buf_len);
-    assert(sr->buf_len >= sr->next_read_pos);
-
     lk_string_assign(line, "");
 
     if (sr->sockclosed) {
         return Z_EOF;
     }
+    LKBuffer *buf = sr->buf;
 
     while (1) { // leave space for null terminator
         // If no buffer chars available, read from socket.
-        if (sr->next_read_pos >= sr->buf_len) {
-            memset(sr->buf, '*', sr->buf_size); // initialize for debugging purposes.
-            z = recv(sr->sock, sr->buf, sr->buf_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+        if (buf->bytes_cur >= buf->bytes_len) {
+            memset(buf->bytes, '*', buf->bytes_size); // initialize for debugging purposes.
+            z = recv(sr->sock, buf->bytes, buf->bytes_size, MSG_DONTWAIT | MSG_NOSIGNAL);
             // socket closed, no more data
             if (z == 0) {
                 sr->sockclosed = 1;
@@ -449,19 +440,19 @@ int lk_socketreader_readline(LKSocketReader *sr, LKString *line) {
                 return Z_ERR;
             }
             assert(z > 0);
-            sr->buf_len = z;
-            sr->next_read_pos = 0;
+            buf->bytes_len = z;
+            buf->bytes_cur = 0;
             z = Z_OPEN;
         }
 
         // Copy unread buffer bytes into dst until a '\n' char.
         while (1) {
-            if (sr->next_read_pos >= sr->buf_len) {
+            if (buf->bytes_cur >= buf->bytes_len) {
                 break;
             }
-            char ch = sr->buf[sr->next_read_pos];
+            char ch = buf->bytes[buf->bytes_cur];
             lk_string_append_char(line, ch);
-            sr->next_read_pos++;
+            buf->bytes_cur++;
 
             if (ch == '\n') {
                 goto readline_end;
@@ -474,15 +465,17 @@ readline_end:
     return z;
 }
 
-int lk_socketreader_recv(LKSocketReader *sr, LKBuffer *buf) {
-    // Append any unread buffer bytes into buf.
-    if (sr->next_read_pos < sr->buf_len) {
-        int ncopy = sr->buf_len - sr->next_read_pos;
-        lk_buffer_append(buf, sr->buf + sr->next_read_pos, ncopy);
-        sr->next_read_pos += ncopy;
+int lk_socketreader_recv(LKSocketReader *sr, LKBuffer *buf_dest) {
+    LKBuffer *buf = sr->buf;
+
+    // Append any unread buffer bytes into buf_dest.
+    if (buf->bytes_cur < buf->bytes_len) {
+        int ncopy = buf->bytes_len - buf->bytes_cur;
+        lk_buffer_append(buf_dest, buf->bytes + buf->bytes_cur, ncopy);
+        buf->bytes_cur += ncopy;
     }
 
-    int z = lk_read_all_sock(sr->sock, buf);
+    int z = lk_read_all_sock(sr->sock, buf_dest);
     if (z == Z_BLOCK) {
         sr->sockclosed = 1;
     }
@@ -499,11 +492,11 @@ void debugprint_buf(char *buf, size_t buf_size) {
 }
 
 void lk_socketreader_debugprint(LKSocketReader *sr) {
-    printf("buf_size: %ld\n", sr->buf_size);
-    printf("buf_len: %ld\n", sr->buf_len);
-    printf("next_read_pos: %d\n", sr->next_read_pos);
+    printf("buf_size: %ld\n", sr->buf->bytes_size);
+    printf("buf_len: %ld\n", sr->buf->bytes_len);
+    printf("buf cur: %ld\n", sr->buf->bytes_cur);
     printf("sockclosed: %d\n", sr->sockclosed);
-    debugprint_buf(sr->buf, sr->buf_size);
+    debugprint_buf(sr->buf->bytes, sr->buf->bytes_size);
     printf("\n");
 }
 

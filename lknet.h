@@ -50,10 +50,7 @@ void lk_httpresponse_debugprint(LKHttpResponse *resp);
 /*** LKSocketReader - Buffered input for sockets ***/
 typedef struct {
     int sock;
-    char *buf;
-    size_t buf_size;
-    size_t buf_len;
-    unsigned int next_read_pos;
+    LKBuffer *buf;
     int sockclosed;
 } LKSocketReader;
 
