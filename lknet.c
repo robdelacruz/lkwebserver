@@ -466,6 +466,7 @@ readline_end:
 }
 
 int lk_socketreader_recv(LKSocketReader *sr, LKBuffer *buf_dest) {
+    lk_buffer_clear(buf_dest);
     LKBuffer *buf = sr->buf;
 
     // Append any unread buffer bytes into buf_dest.
@@ -476,7 +477,7 @@ int lk_socketreader_recv(LKSocketReader *sr, LKBuffer *buf_dest) {
     }
 
     int z = lk_read_all_sock(sr->sock, buf_dest);
-    if (z == Z_BLOCK) {
+    if (z == Z_EOF) {
         sr->sockclosed = 1;
     }
     return z;

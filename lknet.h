@@ -68,14 +68,13 @@ typedef struct {
     int head_complete;              // flag indicating header lines complete
     int body_complete;              // flag indicating request body complete
     unsigned int content_length;    // value of Content-Length header
-    LKHttpRequest *req;             // httprequest to output to while parsing
 } LKHttpRequestParser;
 
-LKHttpRequestParser *lk_httprequestparser_new(LKHttpRequest *req);
+LKHttpRequestParser *lk_httprequestparser_new();
 void lk_httprequestparser_free(LKHttpRequestParser *parser);
 void lk_httprequestparser_reset(LKHttpRequestParser *parser);
-void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, LKString *line);
-void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, LKBuffer *buf);
+void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, LKString *line, LKHttpRequest *req);
+void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, LKBuffer *buf, LKHttpRequest *req);
 
 /*** CGI Parser ***/
 void parse_cgi_output(LKBuffer *buf, LKHttpResponse *resp);
@@ -102,6 +101,8 @@ typedef struct lkcontext_s {
     struct sockaddr_in client_sa;     // client address
     LKString *client_ipaddr;          // client ip address string
     unsigned short client_port;       // client port number
+    LKString *req_line;               // current request line
+    LKBuffer *req_buf;                // current request bytes buffer
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequestParser *reqparser;   // parser for httprequest
     LKHttpRequest *req;               // http request so far

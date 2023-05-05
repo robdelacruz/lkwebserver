@@ -276,26 +276,23 @@ void set_cgi_env2(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
 }
 
 void read_request(LKHttpServer *server, LKContext *ctx) {
-    //$$ Replace this later with code that doesn't allocate memory.
-    LKString *line = lk_string_new("");
-    LKBuffer *buf = lk_buffer_new(0);
     int z = 0;
 
     while (1) {
         if (!ctx->reqparser->head_complete) {
-            z = lk_socketreader_readline(ctx->sr, line);
+            z = lk_socketreader_readline(ctx->sr, ctx->req_line);
             if (z == Z_ERR) {
                 lk_print_err("lksocketreader_readline()");
                 break;
             }
-            lk_httprequestparser_parse_line(ctx->reqparser, line);
+            lk_httprequestparser_parse_line(ctx->reqparser, ctx->req_line, ctx->req);
         } else {
-            z = lk_socketreader_recv(ctx->sr, buf);
+            z = lk_socketreader_recv(ctx->sr, ctx->req_buf);
             if (z == Z_ERR) {
                 lk_print_err("lksocketreader_readbytes()");
                 break;
             }
-            lk_httprequestparser_parse_bytes(ctx->reqparser, buf);
+            lk_httprequestparser_parse_bytes(ctx->reqparser, ctx->req_buf, ctx->req);
         }
         // No more data coming in.
         if (ctx->sr->sockclosed) {
@@ -311,9 +308,6 @@ void read_request(LKHttpServer *server, LKContext *ctx) {
             break;
         }
     }
-
-    lk_string_free(line);
-    lk_buffer_free(buf);
 }
 
 // Send cgi_inputbuf input bytes to cgi program stdin set in selectfd.

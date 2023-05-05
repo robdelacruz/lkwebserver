@@ -26,6 +26,9 @@ LKContext *lk_context_new() {
 
     ctx->client_ipaddr = NULL;
     ctx->client_port = 0;
+
+    ctx->req_line = NULL;
+    ctx->req_buf = NULL;
     ctx->sr = NULL;
     ctx->req = NULL;
     ctx->resp = NULL;
@@ -51,10 +54,13 @@ LKContext *create_initial_context(int fd, struct sockaddr_in *sa) {
     ctx->client_sa = *sa;
     ctx->client_ipaddr = lk_get_ipaddr_string((struct sockaddr *) sa);
     ctx->client_port = lk_get_sockaddr_port((struct sockaddr *) sa);
+
+    ctx->req_line = lk_string_new("");
+    ctx->req_buf = lk_buffer_new(0);
     ctx->sr = lk_socketreader_new(fd, 0);
     ctx->req = lk_httprequest_new();
     ctx->resp = lk_httpresponse_new();
-    ctx->reqparser = lk_httprequestparser_new(ctx->req);
+    ctx->reqparser = lk_httprequestparser_new();
 
     ctx->cgifd = 0;
     ctx->cgi_outputbuf = NULL;
@@ -69,6 +75,12 @@ LKContext *create_initial_context(int fd, struct sockaddr_in *sa) {
 void lk_context_free(LKContext *ctx) {
     if (ctx->client_ipaddr) {
         lk_string_free(ctx->client_ipaddr);
+    }
+    if (ctx->req_line) {
+        lk_string_free(ctx->req_line);
+    }
+    if (ctx->req_buf) {
+        lk_buffer_free(ctx->req_buf);
     }
     if (ctx->sr) {
         lk_socketreader_free(ctx->sr);
@@ -97,6 +109,8 @@ void lk_context_free(LKContext *ctx) {
     ctx->next = NULL;
     memset(&ctx->client_sa, 0, sizeof(struct sockaddr_in));
     ctx->client_ipaddr = NULL;
+    ctx->req_line = NULL;
+    ctx->req_buf = NULL;
     ctx->sr = NULL;
     ctx->reqparser = NULL;
     ctx->req = NULL;

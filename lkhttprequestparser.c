@@ -9,27 +9,25 @@
 #include "lklib.h"
 #include "lknet.h"
 
-void parse_line(LKHttpRequestParser *parser, char *line);
+void parse_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req);
 void parse_request_line(char *line, LKHttpRequest *req);
 static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req);
 void parse_uri(LKString *lks_uri, LKString *lks_path, LKString *lks_filename, LKString *lks_qs);
 
 /*** LKHttpRequestParser functions ***/
-LKHttpRequestParser *lk_httprequestparser_new(LKHttpRequest *req) {
+LKHttpRequestParser *lk_httprequestparser_new() {
     LKHttpRequestParser *parser = malloc(sizeof(LKHttpRequestParser));
     parser->partial_line = lk_string_new("");
     parser->nlinesread = 0;
     parser->content_length = 0;
     parser->head_complete = 0;
     parser->body_complete = 0;
-    parser->req = req;
     return parser;
 }
 
 void lk_httprequestparser_free(LKHttpRequestParser *parser) {
     lk_string_free(parser->partial_line);
     parser->partial_line = NULL;
-    parser->req = NULL;
     free(parser);
 }
 
@@ -42,16 +40,16 @@ void lk_httprequestparser_reset(LKHttpRequestParser *parser) {
     parser->body_complete = 0;
 }
 
-// Parse one line and cumulatively compile results into parser->req.
+// Parse one line and cumulatively compile results into req.
 // You can check the state of the parser through the following fields:
 // parser->head_complete   Request Line and Headers complete
 // parser->body_complete   httprequest is complete
-void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, LKString *line) {
+void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, LKString *line, LKHttpRequest *req) {
     // If there's a previous partial line, combine it with current line.
     if (parser->partial_line->s_len > 0) {
         lk_string_append(parser->partial_line, line->s);
         if (lk_string_ends_with(parser->partial_line, "\n")) {
-            parse_line(parser, parser->partial_line->s);
+            parse_line(parser, parser->partial_line->s, req);
             lk_string_assign(parser->partial_line, "");
         }
         return;
@@ -64,13 +62,13 @@ void lk_httprequestparser_parse_line(LKHttpRequestParser *parser, LKString *line
         return;
     }
 
-    parse_line(parser, line->s);
+    parse_line(parser, line->s, req);
 }
 
-void parse_line(LKHttpRequestParser *parser, char *line) {
+void parse_line(LKHttpRequestParser *parser, char *line, LKHttpRequest *req) {
     // First line: parse initial request line.
     if (parser->nlinesread == 0) {
-        parse_request_line(line, parser->req);
+        parse_request_line(line, req);
         parser->nlinesread++;
         return;
     }
@@ -89,7 +87,7 @@ void parse_line(LKHttpRequestParser *parser, char *line) {
             }
             return;
         }
-        parse_header_line(parser, line, parser->req);
+        parse_header_line(parser, line, req);
         return;
     }
 }
@@ -192,11 +190,11 @@ static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpReq
 }
 
 
-// Parse sequence of bytes into request body. Compile results into parser->req.
+// Parse sequence of bytes into request body. Compile results into req.
 // You can check the state of the parser through the following fields:
 // parser->head_complete   Request Line and Headers complete
 // parser->body_complete   httprequest is complete
-void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, LKBuffer *buf) {
+void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, LKBuffer *buf, LKHttpRequest *req) {
     // Head should be parsed line by line. Call parse_line() instead.
     if (!parser->head_complete) {
         return;
@@ -205,8 +203,8 @@ void lk_httprequestparser_parse_bytes(LKHttpRequestParser *parser, LKBuffer *buf
         return;
     }
 
-    lk_buffer_append(parser->req->body, buf->bytes, buf->bytes_len);
-    if (parser->req->body->bytes_len >= parser->content_length) {
+    lk_buffer_append(req->body, buf->bytes, buf->bytes_len);
+    if (req->body->bytes_len >= parser->content_length) {
         parser->body_complete = 1;
     }
 }
