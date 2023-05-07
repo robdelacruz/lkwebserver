@@ -105,9 +105,12 @@ typedef struct lkcontext_s {
     LKBuffer *req_buf;                // current request bytes buffer
     LKSocketReader *sr;               // input buffer for reading lines
     LKHttpRequestParser *reqparser;   // parser for httprequest
-    LKHttpRequest *req;               // http request so far
+    LKHttpRequest *req;               // http request in process
+
+    // Used by CTX_WRITE_REQ:
     LKHttpResponse *resp;             // http response to be sent
-                                      //
+    LKRefList *buflist;               // Buffer list of things to send/recv
+
     // Used by CTX_READ_CGI:
     int cgifd;
     LKBuffer *cgi_outputbuf;          // receive cgi stdout bytes here
@@ -250,6 +253,9 @@ int lk_write_file(int fd, LKBuffer *buf, size_t count, size_t *nbytes);
 int lk_write_all(int fd, FDType fd_type, LKBuffer *buf);
 int lk_write_all_sock(int fd, LKBuffer *buf);
 int lk_write_all_file(int fd, LKBuffer *buf);
+
+// Similar to lk_write_all(), but sending buflist buf's sequentially.
+int lk_buflist_write_all(int fd, FDType fd_type, LKRefList *buflist);
 
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s);

@@ -340,6 +340,7 @@ int lk_write_file(int fd, LKBuffer *buf, size_t count, size_t *nbytes) {
 
 // Write buf bytes to nonblocking fd.
 // Returns one of the following:
+//    0 (Z_EOF) for all buf bytes sent
 //    1 (Z_OPEN) for socket open
 //   -1 (Z_ERR) for error
 //   -2 (Z_BLOCK) for blocked socket (no data)
@@ -348,7 +349,12 @@ int lk_write_file(int fd, LKBuffer *buf, size_t count, size_t *nbytes) {
 // Used to cumulatively write data into buf.
 int lk_write_all(int fd, FDType fd_type, LKBuffer *buf) {
     int z;
-    while (buf->bytes_cur < buf->bytes_len) {
+    while (1) {
+        int nwrite = buf->bytes_len - buf->bytes_cur;
+        if (nwrite <= 0) {
+            z = Z_EOF;
+            break;
+        }
         if (fd_type == FD_SOCK) {
             z = send(fd,
                      buf->bytes + buf->bytes_cur, 
@@ -375,7 +381,7 @@ int lk_write_all(int fd, FDType fd_type, LKBuffer *buf) {
         assert(z >= 0);
         buf->bytes_cur += z;
     }
-    if (z >= 0) {
+    if (z > 0) {
         z = Z_OPEN;
     }
     return z;
@@ -385,6 +391,22 @@ int lk_write_all_sock(int fd, LKBuffer *buf) {
 }
 int lk_write_all_file(int fd, LKBuffer *buf) {
     return lk_write_all(fd, FD_FILE, buf);
+}
+
+// Similar to lk_write_all(), but sending buflist buf's sequentially.
+int lk_buflist_write_all(int fd, FDType fd_type, LKRefList *buflist) {
+    if (buflist->items_cur >= buflist->items_len) {
+        return Z_EOF;
+    }
+
+    LKBuffer *buf = lk_reflist_get_cur(buflist);
+    assert(buf != NULL);
+    int z = lk_write_all(fd, fd_type, buf);
+    if (z == Z_EOF) {
+        buflist->items_cur++;
+        z = Z_OPEN;
+    }
+    return z;
 }
 
 /** lksocketreader functions **/

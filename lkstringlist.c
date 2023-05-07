@@ -12,7 +12,7 @@
 
 LKStringList *lk_stringlist_new() {
     LKStringList *sl = malloc(sizeof(LKStringList));
-    sl->items_size = 1; // start with room for n items
+    sl->items_size = N_GROW_STRINGLIST;
     sl->items_len = 0;
 
     sl->items = malloc(sl->items_size * sizeof(LKString*));
@@ -69,7 +69,6 @@ void lk_stringlist_append_sprintf(LKStringList *sl, const char *fmt, ...) {
 LKString *lk_stringlist_get(LKStringList *sl, unsigned int i) {
     if (sl->items_len == 0) return NULL;
     if (i >= sl->items_len) return NULL;
-
     return sl->items[i];
 }
 

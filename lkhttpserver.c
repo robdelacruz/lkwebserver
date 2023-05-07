@@ -313,29 +313,25 @@ void read_request(LKHttpServer *server, LKContext *ctx) {
 // Send cgi_inputbuf input bytes to cgi program stdin set in selectfd.
 void write_cgi_input(LKHttpServer *server, LKContext *ctx) {
     assert(ctx->cgi_inputbuf != NULL);
-    LKBuffer *buf = ctx->cgi_inputbuf;
-
-    // Write as much input bytes as the cgi program will receive.
-    if (buf->bytes_cur < buf->bytes_len) {
-        int z = lk_write_all_file(ctx->selectfd, buf);
-        if (z == Z_BLOCK) {
-            return;
-        }
-        if (z == Z_ERR) {
-            lk_print_err("lk_write_all_file()");
-            z = terminate_fd(ctx->cgifd, FD_FILE, FD_WRITE, server);
-            if (z == 0) {
-                ctx->cgifd = 0;
-            }
-            remove_selectfd_context(&server->ctxhead, ctx->selectfd);
-        }
+    int z = lk_write_all_file(ctx->selectfd, ctx->cgi_inputbuf);
+    if (z == Z_BLOCK) {
         return;
     }
-
-    // Completed writing input bytes.
-    FD_CLR_WRITE(ctx->selectfd, server);
-    shutdown(ctx->selectfd, SHUT_WR);
-    remove_selectfd_context(&server->ctxhead, ctx->selectfd);
+    if (z == Z_ERR) {
+        lk_print_err("write_cgi_input lk_write_all_file()");
+        z = terminate_fd(ctx->cgifd, FD_FILE, FD_WRITE, server);
+        if (z == 0) {
+            ctx->cgifd = 0;
+        }
+        remove_selectfd_context(&server->ctxhead, ctx->selectfd);
+        return;
+    }
+    if (z == Z_EOF) {
+        // Completed writing input bytes.
+        FD_CLR_WRITE(ctx->selectfd, server);
+        shutdown(ctx->selectfd, SHUT_WR);
+        remove_selectfd_context(&server->ctxhead, ctx->selectfd);
+    }
 }
 
 // Read cgi output to cgi_outputbuf.
@@ -568,6 +564,9 @@ void process_response(LKHttpServer *server, LKContext *ctx) {
     ctx->selectfd = ctx->clientfd;
     ctx->type = CTX_WRITE_RESP;
     FD_SET_WRITE(ctx->selectfd, server);
+    lk_reflist_clear(ctx->buflist);
+    lk_reflist_append(ctx->buflist, resp->head);
+    lk_reflist_append(ctx->buflist, resp->body);
     return;
 }
 
@@ -642,31 +641,16 @@ char *fileext(char *filepath) {
 }
 
 void write_response(LKHttpServer *server, LKContext *ctx) {
-    LKHttpResponse *resp = ctx->resp;
-
-    // Send as much response bytes as the client will receive.
-    // Send response head bytes first, then response body bytes.
-    if (resp->head->bytes_cur < resp->head->bytes_len) {
-        int z = lk_write_all_sock(ctx->selectfd, resp->head);
-        if (z == Z_BLOCK) {
-            return;
-        }
-        if (z == Z_ERR) {
-            lk_print_err("lk_write_all_sock()");
-            terminate_client_session(server, ctx);
-            return;
-        }
-    } else if (resp->body->bytes_cur < resp->body->bytes_len) {
-        int z = lk_write_all_sock(ctx->selectfd, resp->body);
-        if (z == Z_BLOCK) {
-            return;
-        }
-        if (z == Z_ERR) {
-            lk_print_err("lk_write_all_sock()");
-            terminate_client_session(server, ctx);
-            return;
-        }
-    } else {
+    int z = lk_buflist_write_all(ctx->selectfd, FD_SOCK, ctx->buflist);
+    if (z == Z_BLOCK) {
+        return;
+    }
+    if (z == Z_ERR) {
+        lk_print_err("write_response lk_buflist_write_all()");
+        terminate_client_session(server, ctx);
+        return;
+    }
+    if (z == Z_EOF) {
         // Completed sending http response.
         terminate_client_session(server, ctx);
     }
@@ -685,42 +669,26 @@ void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost) {
     ctx->selectfd = proxyfd;
     ctx->type = CTX_PROXY_WRITE_REQ;
     FD_SET_WRITE(proxyfd, server);
+    lk_reflist_clear(ctx->buflist);
+    lk_reflist_append(ctx->buflist, ctx->req->head);
+    lk_reflist_append(ctx->buflist, ctx->req->body);
 }
 
 void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
-    LKHttpRequest *req = ctx->req;
-
-    // Send as much request bytes as the proxy will receive.
-    // Send request head bytes first, then request body bytes.
-    if (req->head->bytes_cur < req->head->bytes_len) {
-        int z = lk_write_all_sock(ctx->selectfd, req->head);
-        if (z == Z_BLOCK) {
-            return;
+    int z = lk_buflist_write_all(ctx->selectfd, FD_SOCK, ctx->buflist);
+    if (z == Z_BLOCK) {
+        return;
+    }
+    if (z == Z_ERR) {
+        lk_print_err("write_proxy_request lk_buflist_write_all");
+        z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
+        if (z == 0) {
+            ctx->proxyfd = 0;
         }
-        if (z == Z_ERR) {
-            lk_print_err("lk_write_all_sock()");
-            z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
-            if (z == 0) {
-                ctx->proxyfd = 0;
-            }
-            process_error_response(server, ctx, 500, "Error forwarding request to proxy.");
-            return;
-        }
-    } else if (req->body->bytes_cur < req->body->bytes_len) {
-        int z = lk_write_all_sock(ctx->selectfd, req->body);
-        if (z == Z_BLOCK) {
-            return;
-        }
-        if (z == Z_ERR) {
-            lk_print_err("lk_write_all_sock()");
-            z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_WRITE, server);
-            if (z == 0) {
-                ctx->proxyfd = 0;
-            }
-            process_error_response(server, ctx, 500, "Error forwarding request to proxy.");
-            return;
-        }
-    } else {
+        process_error_response(server, ctx, 500, "Error forwarding request to proxy.");
+        return;
+    }
+    if (z == Z_EOF) {
         // Completed sending http request.
         FD_CLR_WRITE(ctx->selectfd, server);
         shutdown(ctx->selectfd, SHUT_WR);
@@ -767,21 +735,18 @@ void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
 }
 
 void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
-    LKBuffer *buf = ctx->proxy_respbuf;
-
-    // Send as much response bytes as the client will receive.
-    if (buf->bytes_cur < buf->bytes_len) {
-        int z = lk_write_all_sock(ctx->selectfd, buf);
-        if (z == Z_BLOCK) {
-            return;
-        }
-        if (z == Z_ERR) {
-            lk_print_err("lk_write_all_sock()");
-            process_error_response(server, ctx, 500, "Error sending proxy response.");
-            return;
-        }
-    } else {
-        // Completed sending proxy response.
+    assert(ctx->proxy_respbuf != NULL);
+    int z = lk_write_all_sock(ctx->selectfd, ctx->proxy_respbuf);
+    if (z == Z_BLOCK) {
+        return;
+    }
+    if (z == Z_ERR) {
+        lk_print_err("write_proxy_response lk_write_all_sock()");
+        process_error_response(server, ctx, 500, "Error sending proxy response.");
+        return;
+    }
+    if (z == Z_EOF) {
+        // Completed sending http response.
         terminate_client_session(server, ctx);
     }
 }

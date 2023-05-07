@@ -83,6 +83,22 @@ char *lk_stringtable_get(LKStringTable *sm, char *ks);
 void lk_stringtable_remove(LKStringTable *sm, char *ks);
 
 
+/*** LKStringList ***/
+typedef struct lkstringlist {
+    LKString **items;
+    size_t items_len;
+    size_t items_size;
+} LKStringList;
+
+LKStringList *lk_stringlist_new();
+void lk_stringlist_free(LKStringList *sl);
+void lk_stringlist_append_lkstring(LKStringList *sl, LKString *lks);
+void lk_stringlist_append(LKStringList *sl, char *s);
+void lk_stringlist_append_sprintf(LKStringList *sl, const char *fmt, ...);
+LKString *lk_stringlist_get(LKStringList *sl, unsigned int i);
+void lk_stringlist_remove(LKStringList *sl, unsigned int i);
+
+
 /*** LKBuffer - Dynamic bytes buffer ***/
 typedef struct {
     char *bytes;        // bytes buffer
@@ -101,20 +117,21 @@ void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...);
 size_t lk_buffer_readline(LKBuffer *buf, char *dst, size_t dst_len);
 
 
-/*** LKStringList ***/
-typedef struct lkstringlist {
-    LKString **items;
+/*** LKRefList ***/
+typedef struct {
+    void **items;
     size_t items_len;
     size_t items_size;
-} LKStringList;
+    size_t items_cur;
+} LKRefList;
 
-LKStringList *lk_stringlist_new();
-void lk_stringlist_free(LKStringList *sl);
-void lk_stringlist_append_lkstring(LKStringList *sl, LKString *lks);
-void lk_stringlist_append(LKStringList *sl, char *s);
-void lk_stringlist_append_sprintf(LKStringList *sl, const char *fmt, ...);
-LKString *lk_stringlist_get(LKStringList *sl, unsigned int i);
-void lk_stringlist_remove(LKStringList *sl, unsigned int i);
+LKRefList *lk_reflist_new();
+void lk_reflist_free(LKRefList *l);
+void lk_reflist_append(LKRefList *l, void *p);
+void *lk_reflist_get(LKRefList *l, unsigned int i);
+void *lk_reflist_get_cur(LKRefList *l);
+void lk_reflist_remove(LKRefList *l, unsigned int i);
+void lk_reflist_clear(LKRefList *l);
 
 #endif
 

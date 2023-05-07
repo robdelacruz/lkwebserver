@@ -11,6 +11,7 @@ void lkstring_test();
 void lkstringmap_test();
 void lkbuffer_test();
 void lkstringlist_test();
+void lkreflist_test();
 void lkconfig_test();
 
 int main(int argc, char *argv[]) {
@@ -18,6 +19,7 @@ int main(int argc, char *argv[]) {
     lkstringmap_test();
     lkbuffer_test();
     lkstringlist_test();
+    lkreflist_test();
     lkconfig_test();
     return 0;
 }
@@ -430,6 +432,39 @@ void lkstringlist_test() {
     assert(!strcmp(s0->s, "Hello abc"));
 
     lk_stringlist_free(sl);
+    printf("Done.\n");
+}
+
+void lkreflist_test() {
+    printf("Running LKRefList tests... ");
+
+    LKString *abc = lk_string_new("abc");
+    LKString *def = lk_string_new("def");
+    LKString *ghi = lk_string_new("ghi");
+    LKString *jkl = lk_string_new("jkl");
+    LKString *mno = lk_string_new("mno");
+    LKRefList *l = lk_reflist_new();
+    lk_reflist_append(l, abc);
+    lk_reflist_append(l, def);
+    lk_reflist_append(l, ghi);
+    lk_reflist_append(l, jkl);
+    lk_reflist_append(l, mno);
+    assert(l->items_len == 5);
+
+    LKString *s = lk_reflist_get(l, 0);
+    assert(lk_string_sz_equal(s, "abc"));
+    s = lk_reflist_get(l, 5);
+    assert(s == NULL);
+    s = lk_reflist_get(l, 4);
+    assert(lk_string_sz_equal(s, "mno"));
+    s = lk_reflist_get(l, 3);
+    assert(lk_string_sz_equal(s, "jkl"));
+    lk_reflist_remove(l, 3);
+    assert(l->items_len == 4);
+    s = lk_reflist_get(l, 3);
+    assert(lk_string_sz_equal(s, "mno"));
+
+    lk_reflist_free(l);
     printf("Done.\n");
 }
 
