@@ -9,6 +9,14 @@
 #define LK_BUFSIZE_XL 4096
 #define LK_BUFSIZE_XXL 8192
 
+#ifdef DEBUGALLOC
+#define malloc(size) (lk_malloc((size), "malloc"))
+#define realloc(p, size) (lk_realloc((p), (size), "realloc"))
+#define free(p) (lk_free((p))) 
+#define strdup(s) (lk_strdup((s), "strdup"))
+#define strndup(s, n) (lk_strndup((s), (n), "strndup"))
+#endif
+
 void lk_print_err(char *s);
 void lk_exit_err(char *s);
 char *lk_vasprintf(char *fmt, va_list args);
@@ -22,6 +30,14 @@ int lk_popen3(char *cmd, int *fd_in, int *fd_out, int *fd_err);
 // get_localtime_string(timestr, sizeof(timestr))
 #define TIME_STRING_SIZE 25
 void get_localtime_string(char *time_str, size_t time_str_len);
+
+void lk_alloc_init();
+void *lk_malloc(size_t size, char *label);
+void *lk_realloc(void *p, size_t size, char *label);
+void lk_free(void *p);
+char *lk_strdup(const char *s, char *label);
+char *lk_strndup(const char *s, size_t n, char *label);
+void lk_print_allocitems();
 
 // Return matching item in lookup table given testk.
 // tbl is a null-terminated array of char* key-value pairs

@@ -22,6 +22,8 @@ void handle_sigint(int sig);
 void handle_sigchld(int sig);
 void parse_args(int argc, char *argv[], LKConfig *cfg);
 
+LKHttpServer *httpserver;
+
 // lkws [homedir] [port] [host] [-a <alias1>=<path>]...
 // homedir = absolute or relative path to a home directory
 //           defaults to current working directory if not specified
@@ -38,9 +40,10 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, handle_sigint);      // exit on CTRL-C
     signal(SIGCHLD, handle_sigchld);
 
+    lk_alloc_init();
     LKConfig *cfg = lk_config_new();
     parse_args(argc, argv, cfg);
-    LKHttpServer *httpserver = lk_httpserver_new(cfg);
+    httpserver = lk_httpserver_new(cfg);
 
     int z = lk_httpserver_serve(httpserver);
     if (z == -1) {
@@ -55,6 +58,9 @@ int main(int argc, char *argv[]) {
 void handle_sigint(int sig) {
     printf("SIGINT received\n");
     fflush(stdout);
+    lk_httpserver_free(httpserver);
+
+    lk_print_allocitems();
     exit(0);
 }
 
