@@ -24,17 +24,21 @@ void parse_args(int argc, char *argv[], LKConfig *cfg);
 
 LKHttpServer *httpserver;
 
-// lkws [homedir] [port] [host] [-a <alias1>=<path>]...
-// homedir = absolute or relative path to a home directory
-//           defaults to current working directory if not specified
-// port    = port number to bind to server
-//           defaults to 8000
-// host    = IP address to bind to server
-//           defaults to localhost
+// lkws [homedir] [port] [host] [-f configfile] [--cgidir=cgifolder]
+//
+// configfile = configuration file containing site settings
+//              see sample configuration file below
+// homedir    = absolute or relative path to a home directory
+//              defaults to current working directory if not specified
+// port       = port number to bind to server
+//              defaults to 8000
+// host       = IP address to bind to server
+//              defaults to localhost
 // Examples:
-// lkws ./testsite/ 8080 -a latest=latest.html -a about=about.html
-// lkws /var/www/testsite/ 8080 127.0.0.1 -a latest=folder/latest.html
-// lkws /var/www/testsite/ --cgidir=cgifolder
+// lkws ./testsite/ 8080
+// lkws /var/www/testsite/ 8080 127.0.0.1
+// lkws /var/www/testsite/ --cgidir=cgi-bin
+// lkws -f sites.conf
 int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);           // Don't abort on SIGPIPE
     signal(SIGINT, handle_sigint);      // exit on CTRL-C
