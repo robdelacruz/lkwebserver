@@ -376,6 +376,7 @@ void lkbuffer_test() {
     for (int i=0; i < sizeof(sbuf); i++) {
         assert(buf->bytes[i] == 'a');
     }
+
     lk_buffer_free(buf);
 
     buf = lk_buffer_new(0);

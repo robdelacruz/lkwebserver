@@ -52,10 +52,10 @@ static void clear_p(void *p) {
             break;
         }
     }
-//    assert(i < ALLOCITEMS_SIZE);
     if (i >= ALLOCITEMS_SIZE) {
         printf("clear_p i: %d\n", i);
     }
+    assert(i < ALLOCITEMS_SIZE);
 }
 
 void *lk_malloc(size_t size, char *label) {

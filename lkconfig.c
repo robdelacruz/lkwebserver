@@ -272,7 +272,7 @@ void lk_config_finalize(LKConfig *cfg) {
     char *s = get_current_dir_name();
     if (s != NULL) {
         lk_string_assign(current_dir, s);
-        lk_free(s);
+        free(s);
     } else {
         lk_string_assign(current_dir, ".");
     }

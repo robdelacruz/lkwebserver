@@ -87,7 +87,7 @@ void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...) {
         va_end(args);
 
         lk_buffer_append(buf, ps, z);
-        lk_free(ps);
+        free(ps);
         return;
     }
 
