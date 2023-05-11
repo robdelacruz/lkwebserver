@@ -412,7 +412,7 @@ int lk_buflist_write_all(int fd, FDType fd_type, LKRefList *buflist) {
 /** lksocketreader functions **/
 
 LKSocketReader *lk_socketreader_new(int sock, size_t buf_size) {
-    LKSocketReader *sr = malloc(sizeof(LKSocketReader));
+    LKSocketReader *sr = lk_malloc(sizeof(LKSocketReader), "lk_socketreader_new");
     if (buf_size == 0) {
         buf_size = 1024;
     }
@@ -425,7 +425,7 @@ LKSocketReader *lk_socketreader_new(int sock, size_t buf_size) {
 void lk_socketreader_free(LKSocketReader *sr) {
     lk_buffer_free(sr->buf);
     sr->buf = NULL;
-    free(sr);
+    lk_free(sr);
 }
 
 // Read one line from buffered socket including the \n char if present.
@@ -526,7 +526,7 @@ void lk_socketreader_debugprint(LKSocketReader *sr) {
 
 /*** LKHttpRequest functions ***/
 LKHttpRequest *lk_httprequest_new() {
-    LKHttpRequest *req = malloc(sizeof(LKHttpRequest));
+    LKHttpRequest *req = lk_malloc(sizeof(LKHttpRequest), "lk_httprequest_new");
     req->method = lk_string_new("");
     req->uri = lk_string_new("");
     req->path = lk_string_new("");
@@ -559,7 +559,7 @@ void lk_httprequest_free(LKHttpRequest *req) {
     req->headers = NULL;
     req->head = NULL;
     req->body = NULL;
-    free(req);
+    lk_free(req);
 }
 
 void lk_httprequest_add_header(LKHttpRequest *req, char *k, char *v) {
@@ -618,7 +618,7 @@ void lk_httprequest_debugprint(LKHttpRequest *req) {
 
 /** httpresp functions **/
 LKHttpResponse *lk_httpresponse_new() {
-    LKHttpResponse *resp = malloc(sizeof(LKHttpResponse));
+    LKHttpResponse *resp = lk_malloc(sizeof(LKHttpResponse), "lk_httpresponse_new");
     resp->status = 0;
     resp->statustext = lk_string_new("");
     resp->version = lk_string_new("");
@@ -640,7 +640,7 @@ void lk_httpresponse_free(LKHttpResponse *resp) {
     resp->headers = NULL;
     resp->head = NULL;
     resp->body = NULL;
-    free(resp);
+    lk_free(resp);
 }
 
 void lk_httpresponse_add_header(LKHttpResponse *resp, char *k, char *v) {
@@ -742,7 +742,7 @@ ssize_t lk_readfd(int fd, LKBuffer *buf) {
 // Return new pointer to dest.
 char *lk_astrncat(char *dest, char *src, size_t src_len) {
     int dest_len = strlen(dest);
-    dest = realloc(dest, dest_len + src_len + 1);
+    dest = lk_realloc(dest, dest_len + src_len + 1, "lk_astrncat");
     strncat(dest, src, src_len);
     return dest;
 }

@@ -24,21 +24,21 @@ LKString *lk_string_new(char *s) {
     }
     size_t s_len = strlen(s);
 
-    LKString *lks = malloc(sizeof(LKString));
+    LKString *lks = lk_malloc(sizeof(LKString), "lk_string_new");
     lks->s_len = s_len;
     lks->s_size = s_len;
-    lks->s = malloc(lks->s_size+1);
+    lks->s = lk_malloc(lks->s_size+1, "lk_string_new_s");
     zero_s(lks);
     strncpy(lks->s, s, s_len);
 
     return lks;
 }
 LKString *lk_string_size_new(size_t size) {
-    LKString *lks = malloc(sizeof(LKString));
+    LKString *lks = lk_malloc(sizeof(LKString), "lk_string_size_new");
 
     lks->s_len = 0;
     lks->s_size = size;
-    lks->s = malloc(lks->s_size+1);
+    lks->s = lk_malloc(lks->s_size+1, "lk_string_size_new_s");
     zero_s(lks);
 
     return lks;
@@ -47,9 +47,9 @@ void lk_string_free(LKString *lks) {
     assert(lks->s != NULL);
 
     zero_s(lks);
-    free(lks->s);
+    lk_free(lks->s);
     lks->s = NULL;
-    free(lks);
+    lk_free(lks);
 }
 void lk_string_voidp_free(void *plkstr) {
     lk_string_free((LKString *) plkstr);
@@ -59,7 +59,7 @@ void lk_string_assign(LKString *lks, char *s) {
     size_t s_len = strlen(s);
     if (s_len > lks->s_size) {
         lks->s_size = s_len;
-        lks->s = realloc(lks->s, lks->s_size+1);
+        lks->s = lk_realloc(lks->s, lks->s_size+1, "lk_string_assign");
     }
     zero_s(lks);
     strncpy(lks->s, s, s_len);
@@ -127,7 +127,7 @@ void lk_string_append(LKString *lks, char *s) {
     size_t s_len = strlen(s);
     if (lks->s_len + s_len > lks->s_size) {
         lks->s_size = lks->s_len + s_len;
-        lks->s = realloc(lks->s, lks->s_size+1);
+        lks->s = lk_realloc(lks->s, lks->s_size+1, "lk_string_append");
         zero_unused_s(lks);
     }
 
@@ -139,7 +139,7 @@ void lk_string_append_char(LKString *lks, char c) {
     if (lks->s_len + 1 > lks->s_size) {
         // Grow string by ^2
         lks->s_size = lks->s_len + ((lks->s_len+1) * 2);
-        lks->s = realloc(lks->s, lks->s_size+1);
+        lks->s = lk_realloc(lks->s, lks->s_size+1, "lk_string_append_char");
         zero_unused_s(lks);
     }
 
@@ -152,7 +152,7 @@ void lk_string_prepend(LKString *lks, char *s) {
     size_t s_len = strlen(s);
     if (lks->s_len + s_len > lks->s_size) {
         lks->s_size = lks->s_len + s_len;
-        lks->s = realloc(lks->s, lks->s_size+1);
+        lks->s = lk_realloc(lks->s, lks->s_size+1, "lk_string_prepend");
         zero_unused_s(lks);
     }
 

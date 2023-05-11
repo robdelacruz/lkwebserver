@@ -15,12 +15,17 @@ void lkreflist_test();
 void lkconfig_test();
 
 int main(int argc, char *argv[]) {
+    lk_alloc_init();
+
     lkstring_test();
     lkstringmap_test();
     lkbuffer_test();
     lkstringlist_test();
     lkreflist_test();
     lkconfig_test();
+
+    lk_print_allocitems();
+
     return 0;
 }
 
@@ -464,6 +469,11 @@ void lkreflist_test() {
     s = lk_reflist_get(l, 3);
     assert(lk_string_sz_equal(s, "mno"));
 
+    lk_string_free(abc);
+    lk_string_free(def);
+    lk_string_free(ghi);
+    lk_string_free(jkl);
+    lk_string_free(mno);
     lk_reflist_free(l);
     printf("Done.\n");
 }

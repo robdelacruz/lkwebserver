@@ -11,12 +11,12 @@
 #define N_GROW_REFLIST 10
 
 LKRefList *lk_reflist_new() {
-    LKRefList *l = malloc(sizeof(LKRefList));
+    LKRefList *l = lk_malloc(sizeof(LKRefList), "lk_reflist_new");
     l->items_size = N_GROW_REFLIST;
     l->items_len = 0;
     l->items_cur = 0;
 
-    l->items = malloc(l->items_size * sizeof(void*));
+    l->items = lk_malloc(l->items_size * sizeof(void*), "lk_reflist_new_items");
     memset(l->items, 0, l->items_size * sizeof(void*));
     return l;
 }
@@ -25,16 +25,16 @@ void lk_reflist_free(LKRefList *l) {
     assert(l->items != NULL);
 
     memset(l->items, 0, l->items_size * sizeof(void*));
-    free(l->items);
+    lk_free(l->items);
     l->items = NULL;
-    free(l);
+    lk_free(l);
 }
 
 void lk_reflist_append(LKRefList *l, void *p) {
     assert(l->items_len <= l->items_size);
 
     if (l->items_len == l->items_size) {
-        void **pitems = realloc(l->items, (l->items_size+N_GROW_REFLIST) * sizeof(void*));
+        void **pitems = lk_realloc(l->items, (l->items_size+N_GROW_REFLIST) * sizeof(void*), "lk_reflist_append");
         if (pitems == NULL) {
             return;
         }

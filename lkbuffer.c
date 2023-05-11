@@ -13,19 +13,19 @@ LKBuffer *lk_buffer_new(size_t bytes_size) {
         bytes_size = LK_BUFSIZE_SMALL;
     }
 
-    LKBuffer *buf = malloc(sizeof(LKBuffer));
+    LKBuffer *buf = lk_malloc(sizeof(LKBuffer), "lk_buffer_new");
     buf->bytes_cur = 0;
     buf->bytes_len = 0;
     buf->bytes_size = bytes_size;
-    buf->bytes = malloc(buf->bytes_size);
+    buf->bytes = lk_malloc(buf->bytes_size, "lk_buffer_new_bytes");
     return buf;
 }
 
 void lk_buffer_free(LKBuffer *buf) {
     assert(buf->bytes != NULL);
-    free(buf->bytes);
+    lk_free(buf->bytes);
     buf->bytes = NULL;
-    free(buf);
+    lk_free(buf);
 }
 
 void lk_buffer_resize(LKBuffer *buf, size_t bytes_size) {
@@ -36,7 +36,7 @@ void lk_buffer_resize(LKBuffer *buf, size_t bytes_size) {
     if (buf->bytes_cur >= buf->bytes_len) {
         buf->bytes_cur = buf->bytes_len-1;
     }
-    buf->bytes = realloc(buf->bytes, buf->bytes_size);
+    buf->bytes = lk_realloc(buf->bytes, buf->bytes_size, "lk_buffer_resize");
 }
 
 void lk_buffer_clear(LKBuffer *buf) {
@@ -48,7 +48,7 @@ void lk_buffer_clear(LKBuffer *buf) {
 int lk_buffer_append(LKBuffer *buf, char *bytes, size_t len) {
     // If not enough capacity to append bytes, expand the bytes buffer.
     if (len > buf->bytes_size - buf->bytes_len) {
-        char *bs = realloc(buf->bytes, buf->bytes_size + len);
+        char *bs = lk_realloc(buf->bytes, buf->bytes_size + len, "lk_buffer_append");
         if (bs == NULL) {
             return -1;
         }
@@ -87,7 +87,7 @@ void lk_buffer_append_sprintf(LKBuffer *buf, const char *fmt, ...) {
         va_end(args);
 
         lk_buffer_append(buf, ps, z);
-        free(ps);
+        lk_free(ps);
         return;
     }
 

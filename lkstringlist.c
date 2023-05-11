@@ -11,11 +11,11 @@
 #define N_GROW_STRINGLIST 10
 
 LKStringList *lk_stringlist_new() {
-    LKStringList *sl = malloc(sizeof(LKStringList));
+    LKStringList *sl = lk_malloc(sizeof(LKStringList), "lk_stringlist_new");
     sl->items_size = N_GROW_STRINGLIST;
     sl->items_len = 0;
 
-    sl->items = malloc(sl->items_size * sizeof(LKString*));
+    sl->items = lk_malloc(sl->items_size * sizeof(LKString*), "lk_stringlist_new_items");
     memset(sl->items, 0, sl->items_size * sizeof(LKString*));
     return sl;
 }
@@ -28,16 +28,16 @@ void lk_stringlist_free(LKStringList *sl) {
     }
     memset(sl->items, 0, sl->items_size * sizeof(LKString*));
 
-    free(sl->items);
+    lk_free(sl->items);
     sl->items = NULL;
-    free(sl);
+    lk_free(sl);
 }
 
 void lk_stringlist_append_lkstring(LKStringList *sl, LKString *lks) {
     assert(sl->items_len <= sl->items_size);
 
     if (sl->items_len == sl->items_size) {
-        LKString **pitems = realloc(sl->items, (sl->items_size+N_GROW_STRINGLIST) * sizeof(LKString*));
+        LKString **pitems = lk_realloc(sl->items, (sl->items_size+N_GROW_STRINGLIST) * sizeof(LKString*), "lk_stringlist_append_lkstring");
         if (pitems == NULL) {
             return;
         }

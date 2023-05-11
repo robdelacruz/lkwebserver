@@ -12,10 +12,10 @@
 #define HOSTCONFIGS_INITIAL_SIZE 10
 
 LKConfig *lk_config_new() {
-    LKConfig *cfg = malloc(sizeof(LKConfig));
+    LKConfig *cfg = lk_malloc(sizeof(LKConfig), "lk_config_new");
     cfg->serverhost = lk_string_new("");
     cfg->port = lk_string_new("");
-    cfg->hostconfigs = malloc(sizeof(LKHostConfig*) * HOSTCONFIGS_INITIAL_SIZE);
+    cfg->hostconfigs = lk_malloc(sizeof(LKHostConfig*) * HOSTCONFIGS_INITIAL_SIZE, "lk_config_new_hostconfigs");
     cfg->hostconfigs_len = 0;
     cfg->hostconfigs_size = HOSTCONFIGS_INITIAL_SIZE;
     return cfg;
@@ -29,13 +29,13 @@ void lk_config_free(LKConfig *cfg) {
         lk_hostconfig_free(hc);
     }
     memset(cfg->hostconfigs, 0, sizeof(LKHostConfig*) * cfg->hostconfigs_size);
-    free(cfg->hostconfigs);
+    lk_free(cfg->hostconfigs);
 
     cfg->serverhost = NULL;
     cfg->port = NULL;
     cfg->hostconfigs = NULL;
     
-    free(cfg);
+    lk_free(cfg);
 }
 
 
@@ -181,7 +181,7 @@ LKHostConfig *lk_config_add_hostconfig(LKConfig *cfg, LKHostConfig *hc) {
     // Increase size if no more space.
     if (cfg->hostconfigs_len == cfg->hostconfigs_size) {
         cfg->hostconfigs_size++;
-        cfg->hostconfigs = realloc(cfg->hostconfigs, sizeof(LKHostConfig*) * cfg->hostconfigs_size);
+        cfg->hostconfigs = lk_realloc(cfg->hostconfigs, sizeof(LKHostConfig*) * cfg->hostconfigs_size, "lk_config_add_hostconfig");
     }
     cfg->hostconfigs[cfg->hostconfigs_len] = hc;
     cfg->hostconfigs_len++;
@@ -272,7 +272,7 @@ void lk_config_finalize(LKConfig *cfg) {
     char *s = get_current_dir_name();
     if (s != NULL) {
         lk_string_assign(current_dir, s);
-        free(s);
+        lk_free(s);
     } else {
         lk_string_assign(current_dir, ".");
     }
@@ -326,7 +326,7 @@ void lk_config_finalize(LKConfig *cfg) {
 
 
 LKHostConfig *lk_hostconfig_new(char *hostname) {
-    LKHostConfig *hc = malloc(sizeof(LKHostConfig));
+    LKHostConfig *hc = lk_malloc(sizeof(LKHostConfig), "lk_hostconfig_new");
 
     hc->hostname = lk_string_new(hostname);
     hc->homedir = lk_string_new("");
@@ -353,6 +353,6 @@ void lk_hostconfig_free(LKHostConfig *hc) {
     hc->aliases = NULL;
     hc->proxyhost = NULL;
 
-    free(hc);
+    lk_free(hc);
 }
 

@@ -58,7 +58,7 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx);
 /*** LKHttpServer functions ***/
 
 LKHttpServer *lk_httpserver_new(LKConfig *cfg) {
-    LKHttpServer *server = malloc(sizeof(LKHttpServer));
+    LKHttpServer *server = lk_malloc(sizeof(LKHttpServer), "lk_httpserver_new");
     server->cfg = cfg;
     server->ctxhead = NULL;
     server->maxfd = 0;
@@ -77,7 +77,7 @@ void lk_httpserver_free(LKHttpServer *server) {
     }
 
     memset(server, 0, sizeof(LKHttpServer));
-    free(server);
+    lk_free(server);
 }
 
 void FD_SET_READ(int fd, LKHttpServer *server) {

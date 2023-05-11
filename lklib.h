@@ -38,6 +38,7 @@ void lk_free(void *p);
 char *lk_strdup(const char *s, char *label);
 char *lk_strndup(const char *s, size_t n, char *label);
 void lk_print_allocitems();
+// vasprintf(&ps, fmt, args); //$$ lk_vasprintf()?
 
 // Return matching item in lookup table given testk.
 // tbl is a null-terminated array of char* key-value pairs

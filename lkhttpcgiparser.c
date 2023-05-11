@@ -51,11 +51,11 @@ void parse_cgi_header_line(char *line, LKHttpResponse *resp) {
     char *saveptr;
     char *delim = ":";
 
-    char *linetmp = strdup(line);
+    char *linetmp = lk_strdup(line, "parse_cgi_header_line");
     lk_chomp(linetmp);
     char *k = strtok_r(linetmp, delim, &saveptr);
     if (k == NULL) {
-        free(linetmp);
+        lk_free(linetmp);
         return;
     }
     char *v = strtok_r(NULL, delim, &saveptr);
@@ -74,6 +74,6 @@ void parse_cgi_header_line(char *line, LKHttpResponse *resp) {
         resp->status = status;
     }
 
-    free(linetmp);
+    lk_free(linetmp);
 }
 

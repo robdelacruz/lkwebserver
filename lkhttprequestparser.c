@@ -16,7 +16,7 @@ void parse_uri(LKString *lks_uri, LKString *lks_path, LKString *lks_filename, LK
 
 /*** LKHttpRequestParser functions ***/
 LKHttpRequestParser *lk_httprequestparser_new() {
-    LKHttpRequestParser *parser = malloc(sizeof(LKHttpRequestParser));
+    LKHttpRequestParser *parser = lk_malloc(sizeof(LKHttpRequestParser), "lk_httprequest_parser_new");
     parser->partial_line = lk_string_new("");
     parser->nlinesread = 0;
     parser->content_length = 0;
@@ -28,7 +28,7 @@ LKHttpRequestParser *lk_httprequestparser_new() {
 void lk_httprequestparser_free(LKHttpRequestParser *parser) {
     lk_string_free(parser->partial_line);
     parser->partial_line = NULL;
-    free(parser);
+    lk_free(parser);
 }
 
 // Clear any pending state.
@@ -100,7 +100,7 @@ void parse_request_line(char *line, LKHttpRequest *req) {
 
     char *saveptr;
     char *delim = " \t";
-    char *linetmp = strdup(line);
+    char *linetmp = lk_strdup(line, "parse_request_line");
     lk_chomp(linetmp);
     char *p = linetmp;
     while (ntoksread < 3) {
@@ -126,7 +126,7 @@ void parse_request_line(char *line, LKHttpRequest *req) {
 
     parse_uri(req->uri, req->path, req->filename, req->querystring);
 
-    free(linetmp);
+    lk_free(linetmp);
 }
 
 // Parse uri into its components.
@@ -163,11 +163,11 @@ static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpReq
     char *saveptr;
     char *delim = ":";
 
-    char *linetmp = strdup(line);
+    char *linetmp = lk_strdup(line, "parse_header_line");
     lk_chomp(linetmp);
     char *k = strtok_r(linetmp, delim, &saveptr);
     if (k == NULL) {
-        free(linetmp);
+        lk_free(linetmp);
         return;
     }
     char *v = strtok_r(NULL, delim, &saveptr);
@@ -186,7 +186,7 @@ static void parse_header_line(LKHttpRequestParser *parser, char *line, LKHttpReq
         parser->content_length = content_length;
     }
 
-    free(linetmp);
+    lk_free(linetmp);
 }
 
 

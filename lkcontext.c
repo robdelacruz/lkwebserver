@@ -18,7 +18,7 @@
 
 /*** LKContext functions ***/
 LKContext *lk_context_new() {
-    LKContext *ctx = malloc(sizeof(LKContext));
+    LKContext *ctx = lk_malloc(sizeof(LKContext), "lk_context_new");
     ctx->selectfd = 0;
     ctx->clientfd = 0;
     ctx->type = 0;
@@ -46,7 +46,7 @@ LKContext *lk_context_new() {
 }
 
 LKContext *create_initial_context(int fd, struct sockaddr_in *sa) {
-    LKContext *ctx = malloc(sizeof(LKContext));
+    LKContext *ctx = lk_malloc(sizeof(LKContext), "create_initial_context");
     ctx->selectfd = fd;
     ctx->clientfd = fd;
     ctx->type = CTX_READ_REQ;
@@ -126,7 +126,7 @@ void lk_context_free(LKContext *ctx) {
     ctx->cgi_inputbuf = NULL;
     ctx->proxyfd = 0;
     ctx->proxy_respbuf = NULL;
-    free(ctx);
+    lk_free(ctx);
 }
 
 // Add new client ctx to end of ctx linked list.
