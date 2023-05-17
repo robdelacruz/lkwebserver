@@ -5,6 +5,7 @@ A little web server written in C for Linux.
 - No external library dependencies
 - Single threaded using I/O multiplexing (select)
 - Supports CGI interface
+- Supports reverse proxy
 - lklib and lknet code available to create your own http server or client
 - Free to use and modify (MIT License)
 
@@ -26,6 +27,9 @@ Usage:
                  defaults to 8000
     host       = IP address to bind to server
                  defaults to localhost
+    cgifolder  = parent directory of cgi scripts
+                 defaults to cgi-bin if not specified
+
     Examples:
     lkws ./testsite/ 8080
     lkws /var/www/testsite/ 8080 127.0.0.1
