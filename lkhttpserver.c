@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
+#include <limits.h>
 #include <signal.h>
 #include <sys/wait.h>
 
@@ -420,7 +421,7 @@ void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
         if (path->s_len == 0) {
             char *default_files[] = {"/index.html", "/index.htm", "/default.html", "/default.htm"};
             for (int i=0; i < sizeof(default_files) / sizeof(char *); i++) {
-                z = read_path_file(hc->homedir->s, default_files[i], resp->body);
+                z = read_path_file(hc->homedir_abspath->s, default_files[i], resp->body);
                 if (z >= 0) {
                     lk_httpresponse_add_header(resp, "Content-Type", "text/html");
                     break;
@@ -429,7 +430,7 @@ void serve_files(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
                 lk_string_assign(path, default_files[i]);
             }
         } else {
-            z = read_path_file(hc->homedir->s, path->s, resp->body);
+            z = read_path_file(hc->homedir_abspath->s, path->s, resp->body);
             char *content_type = (char *) lk_lookup(mimetypes_tbl, fileext(path->s));
             if (content_type == NULL) {
                 content_type = "text/plain";
@@ -480,13 +481,17 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     LKHttpResponse *resp = ctx->resp;
     char *path = req->path->s;
 
-    LKString *cgifile = lk_string_new(hc->homedir->s);
+    LKString *cgifile = lk_string_new(hc->homedir_abspath->s);
     lk_string_append(cgifile, req->path->s);
 
-    // cgi file not found
-    if (!lk_file_exists(cgifile->s)) {
-        lk_string_free(cgifile);
+    // Expand "/../", etc. into real_path.
+    char real_path[PATH_MAX];
+    char *pz = realpath(cgifile->s, real_path);
+    lk_string_free(cgifile);
 
+    // real_path should start with cgidir_abspath
+    // real_path file should exist
+    if (pz == NULL || strncmp(real_path, hc->cgidir_abspath->s, hc->cgidir_abspath->s_len) || !lk_file_exists(real_path)) {
         resp->status = 404;
         lk_string_assign_sprintf(resp->statustext, "File not found '%s'", path);
         lk_httpresponse_add_header(resp, "Content-Type", "text/plain");
@@ -501,8 +506,7 @@ void serve_cgi(LKHttpServer *server, LKContext *ctx, LKHostConfig *hc) {
     // cgi stdout and stderr are streamed to fd_out.
     //$$todo pass any request body to fd_in.
     int fd_in, fd_out;
-    int z = lk_popen3(cgifile->s, &fd_in, &fd_out, NULL);
-    lk_string_free(cgifile);
+    int z = lk_popen3(real_path, &fd_in, &fd_out, NULL);
     if (z == -1) {
         resp->status = 500;
         lk_string_assign_sprintf(resp->statustext, "Server error '%s'", strerror(errno));
@@ -596,11 +600,24 @@ int open_path_file(char *home_dir, char *path) {
 // Read <home_dir>/<uri> file into buffer.
 // Return number of bytes read or -1 for error.
 int read_path_file(char *home_dir, char *path, LKBuffer *buf) {
+    int z;
     // full_path = home_dir + path
     // Ex. "/path/to" + "/index.html"
     LKString *full_path = lk_string_new(home_dir);
     lk_string_append(full_path, path);
-    int z = lk_readfile(full_path->s, buf);
+
+    // Expand "/../", etc. into real_path.
+    char real_path[PATH_MAX];
+    char *pz = realpath(full_path->s, real_path);
+    // real_path should start with home_dir
+    if (pz == NULL || strncmp(real_path, home_dir, strlen(home_dir))) {
+        lk_string_free(full_path);
+        z = -1;
+        errno = EPERM;
+        return z;
+    }
+
+    z = lk_readfile(real_path, buf);
     lk_string_free(full_path);
     return z;
 }

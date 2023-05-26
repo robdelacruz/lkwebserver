@@ -318,6 +318,9 @@ void lk_config_finalize(LKConfig *cfg) {
             if (!lk_string_ends_with(hc->cgidir, "/")) {
                 lk_string_append(hc->cgidir, "/");
             }
+
+            lk_string_assign(hc->cgidir_abspath, hc->homedir_abspath->s);
+            lk_string_append(hc->cgidir_abspath, hc->cgidir->s);
         }
     }
 
@@ -332,6 +335,7 @@ LKHostConfig *lk_hostconfig_new(char *hostname) {
     hc->homedir = lk_string_new("");
     hc->homedir_abspath = lk_string_new("");
     hc->cgidir = lk_string_new("");
+    hc->cgidir_abspath = lk_string_new("");
     hc->aliases = lk_stringtable_new();
     hc->proxyhost = lk_string_new("");
 
@@ -343,6 +347,7 @@ void lk_hostconfig_free(LKHostConfig *hc) {
     lk_string_free(hc->homedir);
     lk_string_free(hc->homedir_abspath);
     lk_string_free(hc->cgidir);
+    lk_string_free(hc->cgidir_abspath);
     lk_stringtable_free(hc->aliases);
     lk_string_free(hc->proxyhost);
 
@@ -350,6 +355,7 @@ void lk_hostconfig_free(LKHostConfig *hc) {
     hc->homedir = NULL;
     hc->homedir_abspath = NULL;
     hc->cgidir = NULL;
+    hc->cgidir_abspath = NULL;
     hc->aliases = NULL;
     hc->proxyhost = NULL;
 

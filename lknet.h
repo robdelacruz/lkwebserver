@@ -139,6 +139,7 @@ typedef struct {
     LKString *homedir;
     LKString *homedir_abspath;
     LKString *cgidir;
+    LKString *cgidir_abspath;
     LKStringTable *aliases;
     LKString *proxyhost;
 } LKHostConfig;
