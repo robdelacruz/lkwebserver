@@ -87,8 +87,7 @@ typedef enum {
     CTX_WRITE_CGI_INPUT,
     CTX_WRITE_RESP,
     CTX_PROXY_WRITE_REQ,
-    CTX_PROXY_READ_RESP,
-    CTX_PROXY_WRITE_RESP
+    CTX_PROXY_PIPE_RESP,
 } LKContextType;
 
 typedef struct lkcontext_s {
@@ -257,6 +256,15 @@ int lk_write_all_file(int fd, LKBuffer *buf);
 
 // Similar to lk_write_all(), but sending buflist buf's sequentially.
 int lk_buflist_write_all(int fd, FDType fd_type, LKRefList *buflist);
+
+// Pipe all available nonblocking readfd bytes into writefd.
+// Uses buf as buffer for queued up bytes waiting to be written.
+// Returns one of the following:
+//    0 (Z_EOF) for read/write complete.
+//    1 (Z_OPEN) for writefd socket open
+//   -1 (Z_ERR) for read/write error.
+//   -2 (Z_BLOCK) for blocked readfd/writefd socket
+int lk_pipe_all(int readfd, int writefd, FDType fd_type, LKBuffer *buf);
 
 // Remove trailing CRLF or LF (\n) from string.
 void lk_chomp(char* s);

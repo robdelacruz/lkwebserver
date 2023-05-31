@@ -52,8 +52,7 @@ void terminate_client_session(LKHttpServer *server, LKContext *ctx);
 
 void serve_proxy(LKHttpServer *server, LKContext *ctx, char *targethost);
 void write_proxy_request(LKHttpServer *server, LKContext *ctx);
-void read_proxy_response(LKHttpServer *server, LKContext *ctx);
-void write_proxy_response(LKHttpServer *server, LKContext *ctx);
+void pipe_proxy_response(LKHttpServer *server, LKContext *ctx);
 
 
 /*** LKHttpServer functions ***/
@@ -175,8 +174,8 @@ int lk_httpserver_serve(LKHttpServer *server) {
                         read_request(server, ctx);
                     } else if (ctx->type == CTX_READ_CGI_OUTPUT) {
                         read_cgi_output(server, ctx);
-                    } else if (ctx->type == CTX_PROXY_READ_RESP) {
-                        read_proxy_response(server, ctx);
+                    } else if (ctx->type == CTX_PROXY_PIPE_RESP) {
+                        pipe_proxy_response(server, ctx);
                     } else {
                         printf("read selectfd %d with unknown ctx type %d\n", selectfd, ctx->type);
                     }
@@ -202,9 +201,6 @@ int lk_httpserver_serve(LKHttpServer *server) {
                     assert(ctx->req != NULL);
                     assert(ctx->req->head != NULL);
                     write_proxy_request(server, ctx);
-                } else if (ctx->type == CTX_PROXY_WRITE_RESP) {
-                    assert(ctx->proxy_respbuf != NULL);
-                    write_proxy_response(server, ctx);
                 } else {
                     printf("write selectfd %d with unknown ctx type %d\n", selectfd, ctx->type);
                 }
@@ -710,12 +706,50 @@ void write_proxy_request(LKHttpServer *server, LKContext *ctx) {
         FD_CLR_WRITE(ctx->selectfd, server);
         shutdown(ctx->selectfd, SHUT_WR);
 
-        ctx->type = CTX_PROXY_READ_RESP;
+        // Pipe proxy response from ctx->proxyfd to ctx->clientfd
+        ctx->type = CTX_PROXY_PIPE_RESP;
         ctx->proxy_respbuf = lk_buffer_new(0);
         FD_SET_READ(ctx->selectfd, server);
     }
 }
 
+void pipe_proxy_response(LKHttpServer *server, LKContext *ctx) {
+    int z = lk_pipe_all(ctx->proxyfd, ctx->clientfd, FD_SOCK, ctx->proxy_respbuf);
+    if (z == Z_OPEN || z == Z_BLOCK) {
+        return;
+    }
+    if (z == Z_ERR) {
+        lk_print_err("pipe_proxy_response lk_pipe_all()");
+        z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_READ, server);
+        if (z == 0) {
+            ctx->proxyfd = 0;
+        }
+        process_error_response(server, ctx, 500, "Error reading/writing proxy response.");
+        return;
+    }
+
+    // EOF - finished reading/writing proxy response.
+    assert(z == Z_EOF);
+
+    // Remove proxy from read list.
+    z = terminate_fd(ctx->proxyfd, FD_SOCK, FD_READ, server);
+    if (z == 0) {
+        ctx->proxyfd = 0;
+    }
+
+    LKHttpRequest *req = ctx->req;
+    char time_str[TIME_STRING_SIZE];
+    get_localtime_string(time_str, sizeof(time_str));
+    printf("%s [%s] \"%s %s\" --> proxyhost\n",
+        ctx->client_ipaddr->s, time_str, req->method->s, req->uri->s);
+
+    // Completed sending proxy response.
+    terminate_client_session(server, ctx);
+}
+
+//$$ read_proxy_response() and write_response() were
+//   replaced by pipe_proxy_response().
+#if 0
 void read_proxy_response(LKHttpServer *server, LKContext *ctx) {
     int z = lk_read_all_sock(ctx->selectfd, ctx->proxy_respbuf);
     if (z == Z_BLOCK) {
@@ -767,6 +801,7 @@ void write_proxy_response(LKHttpServer *server, LKContext *ctx) {
         terminate_client_session(server, ctx);
     }
 }
+#endif
 
 // Clear fd from select()'s, shutdown, and close.
 int terminate_fd(int fd, FDType fd_type, FDAction fd_action, LKHttpServer *server) {

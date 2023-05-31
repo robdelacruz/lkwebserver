@@ -409,6 +409,41 @@ int lk_buflist_write_all(int fd, FDType fd_type, LKRefList *buflist) {
     return z;
 }
 
+// Pipe all available nonblocking readfd bytes into writefd.
+// Uses buf as buffer for queued up bytes waiting to be written.
+// Returns one of the following:
+//    0 (Z_EOF) for read/write complete.
+//    1 (Z_OPEN) for writefd socket open
+//   -1 (Z_ERR) for read/write error.
+//   -2 (Z_BLOCK) for blocked readfd/writefd socket
+int lk_pipe_all(int readfd, int writefd, FDType fd_type, LKBuffer *buf) {
+    int readz, writez;
+
+    readz = lk_read_all(readfd, fd_type, buf);
+    if (readz == Z_ERR) {
+        return readz;
+    }
+    assert(readz == Z_EOF || readz == Z_BLOCK);
+
+    writez = lk_write_all(writefd, fd_type, buf);
+    if (writez == Z_ERR) {
+        return writez;
+    }
+
+    // Pipe complete if no more data to read and all bytes sent.
+    if (readz == Z_EOF && writez == Z_EOF) {
+        return Z_EOF;
+    }
+
+    if (readz == Z_BLOCK) {
+        return Z_BLOCK;
+    }
+    if (writez == Z_EOF) {
+        writez = Z_OPEN;
+    }
+    return writez;
+}
+
 /** lksocketreader functions **/
 
 LKSocketReader *lk_socketreader_new(int sock, size_t buf_size) {
