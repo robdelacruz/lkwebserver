@@ -29,6 +29,7 @@ static void add_p(void *p, char *label) {
     assert(i < ALLOCITEMS_SIZE);
 }
 
+#if 0
 // Replace matching allocitems[] p with newp.
 static void replace_p(void *p, void *newp, char *label) {
     int i;
@@ -41,6 +42,7 @@ static void replace_p(void *p, void *newp, char *label) {
     }
     assert(i < ALLOCITEMS_SIZE);
 }
+#endif
 
 // Clear matching allocitems[] p.
 static void clear_p(void *p) {
@@ -65,8 +67,9 @@ void *lk_malloc(size_t size, char *label) {
 }
 
 void *lk_realloc(void *p, size_t size, char *label) {
+    clear_p(p);
     void *newp = realloc(p, size);
-    replace_p(p, newp, label);
+    add_p(newp, label);
     return newp;
 }
 
